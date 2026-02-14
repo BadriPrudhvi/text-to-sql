@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 
 @pytest.fixture(autouse=True)
@@ -13,28 +13,23 @@ def _set_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRIMARY_DB_TYPE", "sqlite")
     monkeypatch.setenv("SQLITE_URL", "sqlite+aiosqlite://")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-anthropic")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key-openai")
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
 
 
 @pytest.fixture
-def mock_llm_router() -> MagicMock:
-    """Create a mock LiteLLM router that returns predictable SQL."""
-    router = MagicMock()
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "SELECT count(*) AS total FROM users"
-    mock_response.model = "test-model"
-    router.acompletion = AsyncMock(return_value=mock_response)
-    return router
+def mock_chat_model() -> FakeListChatModel:
+    """Create a FakeListChatModel that returns predictable SQL."""
+    return FakeListChatModel(
+        responses=["SELECT count(*) AS total FROM users"] * 20,
+    )
 
 
 @pytest.fixture
-async def app(mock_llm_router: MagicMock):
+async def app(mock_chat_model: FakeListChatModel):
     """Create a test FastAPI app with mocked LLM."""
-    from unittest.mock import patch
-
-    with patch("text_to_sql.app.create_llm_router", return_value=mock_llm_router):
+    with patch("text_to_sql.app.create_chat_model", return_value=mock_chat_model):
         from text_to_sql.app import create_app
 
         test_app = create_app()

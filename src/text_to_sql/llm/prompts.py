@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+
 SYSTEM_PROMPT = """\
 You are a SQL expert assistant. Given a database schema and a natural language \
 question, generate a single SQL query that answers the question.
 
-Rules:
+DATABASE SCHEMA:
+{schema_context}
+
+DIALECT: {dialect}
+
+RULES:
 - Generate ONLY the SQL query, no explanations or commentary
 - Use only tables and columns present in the provided schema
 - For BigQuery, use GoogleSQL syntax (backtick-quoted identifiers)
@@ -17,22 +25,9 @@ Rules:
 - Handle NULL values appropriately\
 """
 
-
-def build_sql_generation_prompt(
-    question: str,
-    schema_context: str,
-    dialect: str,
-) -> list[dict[str, str]]:
-    """Build the messages list for SQL generation."""
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Database dialect: {dialect}\n\n"
-                f"Schema:\n{schema_context}\n\n"
-                f"Question: {question}\n\n"
-                f"SQL:"
-            ),
-        },
+SQL_GENERATION_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", SYSTEM_PROMPT),
+        ("human", "Question: {question}\n\nSQL:"),
     ]
+)

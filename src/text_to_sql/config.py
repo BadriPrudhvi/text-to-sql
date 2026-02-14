@@ -12,12 +12,6 @@ class DatabaseType(str, Enum):
     SQLITE = "sqlite"
 
 
-class RoutingStrategy(str, Enum):
-    COST = "cost-based-routing"
-    LATENCY = "latency-based-routing"
-    SIMPLE = "simple-shuffle"
-
-
 class Settings(BaseSettings):
     model_config = ConfigDict(
         env_file=".env",
@@ -25,8 +19,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # LLM Keys
+    # LLM Keys (provide at least one)
     anthropic_api_key: SecretStr = SecretStr("")
+    google_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
 
     # Database
@@ -37,10 +32,10 @@ class Settings(BaseSettings):
     postgres_url: str = ""
     sqlite_url: str = "sqlite+aiosqlite:///./local.db"
 
-    # LLM Routing
-    default_model: str = "anthropic/claude-opus-4-6"
-    fallback_model: str = "openai/gpt-5.1-chat-latest"
-    routing_strategy: RoutingStrategy = RoutingStrategy.COST
+    # LLM Models
+    default_model: str = "claude-opus-4-6"
+    secondary_model: str = "gemini-2.5-pro"
+    fallback_model: str = "gpt-4o"
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0
 

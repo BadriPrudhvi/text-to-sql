@@ -4,13 +4,15 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from langgraph.checkpoint.memory import MemorySaver
 
 from text_to_sql.api.router import api_router
 from text_to_sql.config import get_settings
 from text_to_sql.db.factory import create_database_backend
-from text_to_sql.llm.router import create_llm_router
+from text_to_sql.llm.router import create_chat_model
 from text_to_sql.logging import setup_logging
 from text_to_sql.mcp.tools import create_mcp_server
+from text_to_sql.pipeline.graph import compile_pipeline
 from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
 from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.store.memory import InMemoryQueryStore
@@ -28,21 +30,28 @@ def create_app() -> FastAPI:
         # Startup: initialize shared resources
         db_backend = await create_database_backend(settings)
         schema_cache = SchemaCache(ttl_seconds=settings.schema_cache_ttl_seconds)
-        llm_router = create_llm_router(settings)
+        chat_model = create_chat_model(settings)
         query_store = InMemoryQueryStore()
-        orchestrator = PipelineOrchestrator(
+
+        # Build LangGraph pipeline with MemorySaver for interrupt/resume
+        checkpointer = MemorySaver()
+        graph = compile_pipeline(
             db_backend=db_backend,
             schema_cache=schema_cache,
-            llm_router=llm_router,
+            chat_model=chat_model,
+            checkpointer=checkpointer,
+        )
+
+        orchestrator = PipelineOrchestrator(
+            graph=graph,
             query_store=query_store,
-            settings=settings,
         )
 
         # Attach to app.state for REST endpoint dependency injection
         app.state.settings = settings
         app.state.db_backend = db_backend
         app.state.schema_cache = schema_cache
-        app.state.llm_router = llm_router
+        app.state.chat_model = chat_model
         app.state.query_store = query_store
         app.state.orchestrator = orchestrator
 
@@ -57,7 +66,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Text-to-SQL Pipeline",
         version="0.1.0",
-        description="Multi-provider text-to-SQL with human-in-the-loop approval",
+        description="Multi-provider text-to-SQL with LangGraph orchestration and human-in-the-loop approval",
         lifespan=lifespan,
     )
 

@@ -1,67 +1,47 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from text_to_sql.config import Settings
-from text_to_sql.models.domain import ApprovalStatus, ColumnInfo, TableInfo
+from text_to_sql.models.domain import ApprovalStatus
 from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
-from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.store.memory import InMemoryQueryStore
 
 
 @pytest.fixture
-def mock_backend() -> AsyncMock:
-    backend = AsyncMock()
-    backend.backend_type = "sqlite"
-    backend.discover_tables = AsyncMock(
-        return_value=[
-            TableInfo(
-                table_name="users",
-                columns=[
-                    ColumnInfo(name="id", data_type="INTEGER"),
-                    ColumnInfo(name="name", data_type="TEXT"),
-                ],
-            )
-        ]
-    )
-    backend.validate_sql = AsyncMock(return_value=[])
-    backend.execute_sql = AsyncMock(return_value=[{"total": 42}])
-    return backend
+def mock_graph() -> MagicMock:
+    """Create a mock LangGraph compiled graph."""
+    graph = MagicMock()
+
+    # Mock ainvoke — first call pauses at interrupt, second call returns results
+    graph.ainvoke = AsyncMock(return_value={
+        "question": "How many users?",
+        "dialect": "sqlite",
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": [],
+        "result": [{"total": 42}],
+    })
+
+    # Mock aget_state — returns graph state after interrupt
+    mock_state = MagicMock()
+    mock_state.values = {
+        "question": "How many users?",
+        "dialect": "sqlite",
+        "schema_context": "CREATE TABLE users (...)",
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": [],
+    }
+    graph.aget_state = AsyncMock(return_value=mock_state)
+
+    return graph
 
 
 @pytest.fixture
-def mock_router() -> MagicMock:
-    router = MagicMock()
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "SELECT count(*) AS total FROM users"
-    mock_response.model = "test-model"
-    router.acompletion = AsyncMock(return_value=mock_response)
-    return router
-
-
-@pytest.fixture
-def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
-    monkeypatch.setenv("OPENAI_API_KEY", "test")
-    monkeypatch.setenv("PRIMARY_DB_TYPE", "sqlite")
-    return Settings()
-
-
-@pytest.fixture
-def orchestrator(
-    mock_backend: AsyncMock,
-    mock_router: MagicMock,
-    settings: Settings,
-) -> PipelineOrchestrator:
+def orchestrator(mock_graph: MagicMock) -> PipelineOrchestrator:
     return PipelineOrchestrator(
-        db_backend=mock_backend,
-        schema_cache=SchemaCache(ttl_seconds=3600),
-        llm_router=mock_router,
+        graph=mock_graph,
         query_store=InMemoryQueryStore(),
-        settings=settings,
     )
 
 
@@ -91,10 +71,29 @@ async def test_execute_unapproved_raises(orchestrator: PipelineOrchestrator) -> 
 
 
 @pytest.mark.asyncio
-async def test_execute_failure_marks_failed(
-    orchestrator: PipelineOrchestrator, mock_backend: AsyncMock
-) -> None:
-    mock_backend.execute_sql = AsyncMock(side_effect=RuntimeError("DB error"))
+async def test_execute_failure_marks_failed(mock_graph: MagicMock) -> None:
+    # Configure graph to return an error on resume
+    call_count = 0
+    original_ainvoke = mock_graph.ainvoke
+
+    async def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First call: submit question (pauses at interrupt)
+            return await original_ainvoke(*args, **kwargs)
+        else:
+            # Second call: resume returns error
+            return {
+                "generated_sql": "SELECT count(*) AS total FROM users",
+                "error": "DB error",
+            }
+
+    mock_graph.ainvoke = AsyncMock(side_effect=side_effect)
+    orchestrator = PipelineOrchestrator(
+        graph=mock_graph,
+        query_store=InMemoryQueryStore(),
+    )
     record = await orchestrator.submit_question("How many users?")
     await orchestrator.approval_manager.approve(record.id)
     executed = await orchestrator.execute_approved(record.id)
