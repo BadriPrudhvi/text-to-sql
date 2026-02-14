@@ -94,7 +94,7 @@ All settings are configured via environment variables (or a `.env` file).
 | `POSTGRES_URL` | `""` | PostgreSQL async connection string |
 | `SQLITE_URL` | `sqlite+aiosqlite:///./local.db` | SQLite connection string |
 | `DEFAULT_MODEL` | `claude-opus-4-6` | Primary LLM model (Anthropic) |
-| `SECONDARY_MODEL` | `gemini-2.5-pro` | Secondary LLM model (Google) |
+| `SECONDARY_MODEL` | `gemini-3-pro-preview` | Secondary LLM model (Google) |
 | `FALLBACK_MODEL` | `gpt-4o` | Fallback LLM model (OpenAI) |
 | `LLM_MAX_TOKENS` | `4096` | Max output tokens for LLM |
 | `LLM_TEMPERATURE` | `0.0` | LLM temperature |
@@ -109,7 +109,7 @@ The pipeline uses LangChain's native provider integrations with `.with_fallbacks
 
 **Anthropic (default):** Set `ANTHROPIC_API_KEY`. Uses `ChatAnthropic` with Claude Opus 4.6.
 
-**Google Gemini:** Set `GOOGLE_API_KEY`. Uses `ChatGoogleGenerativeAI` with Gemini 2.5 Pro.
+**Google Gemini:** Set `GOOGLE_API_KEY`. Uses `ChatGoogleGenerativeAI` with Gemini 3 Pro.
 
 **OpenAI:** Set `OPENAI_API_KEY`. Uses `ChatOpenAI` with GPT-4o.
 

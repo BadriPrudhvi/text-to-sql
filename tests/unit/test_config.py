@@ -13,7 +13,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.llm_temperature == 0.0
     assert settings.schema_cache_ttl_seconds == 3600
     assert settings.default_model == "claude-opus-4-6"
-    assert settings.secondary_model == "gemini-2.5-pro"
+    assert settings.secondary_model == "gemini-3-pro-preview"
     assert settings.fallback_model == "gpt-4o"
 
 

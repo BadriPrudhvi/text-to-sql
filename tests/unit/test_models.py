@@ -33,7 +33,6 @@ def test_table_info_with_columns() -> None:
 def test_query_request_validation() -> None:
     req = QueryRequest(question="How many users?")
     assert req.question == "How many users?"
-    assert req.database == "primary"
 
 
 def test_approval_request_defaults() -> None:

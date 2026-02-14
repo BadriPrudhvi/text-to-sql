@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 from text_to_sql.models.domain import TableInfo
 
 
-@runtime_checkable
 class DatabaseBackend(Protocol):
     """Protocol for all database backends."""
 
@@ -34,8 +33,8 @@ _FORBIDDEN_KEYWORDS = frozenset(
 
 def check_read_only(sql: str) -> list[str]:
     """Check that SQL does not contain DML/DDL keywords. Returns errors."""
-    upper = sql.upper().strip()
-    first_word = upper.split()[0] if upper.split() else ""
+    words = sql.upper().split()
+    first_word = words[0] if words else ""
     if first_word in _FORBIDDEN_KEYWORDS:
         return [f"Forbidden SQL operation: {first_word}. Only SELECT/WITH queries are allowed."]
     return []

@@ -40,8 +40,6 @@ class SQLGenerator:
 
     @staticmethod
     def _strip_code_fences(text: str) -> str:
-        """Remove markdown code fences if present."""
-        match = _CODE_FENCE_RE.match(text.strip())
-        if match:
-            return match.group(1).strip()
-        return text.strip()
+        stripped = text.strip()
+        match = _CODE_FENCE_RE.match(stripped)
+        return match.group(1).strip() if match else stripped

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from functools import partial
 from typing import Any
 
 import structlog
@@ -13,7 +12,6 @@ logger = structlog.get_logger()
 
 
 class BigQueryBackend:
-    """BigQuery database backend using INFORMATION_SCHEMA for discovery."""
 
     def __init__(self, project: str, dataset: str, credentials_path: str = "") -> None:
         self._project = project
@@ -34,7 +32,8 @@ class BigQueryBackend:
                 return bigquery.Client(project=self._project, credentials=credentials)
             return bigquery.Client(project=self._project)
 
-        self._client = await asyncio.get_event_loop().run_in_executor(None, _create_client)
+        loop = asyncio.get_running_loop()
+        self._client = await loop.run_in_executor(None, _create_client)
         logger.info("bigquery_connected", project=self._project, dataset=self._dataset)
 
     async def close(self) -> None:
@@ -50,8 +49,7 @@ class BigQueryBackend:
                 t.table_type,
                 c.column_name,
                 c.data_type,
-                c.is_nullable,
-                c.column_name AS description
+                c.is_nullable
             FROM `{self._project}.{self._dataset}.INFORMATION_SCHEMA.TABLES` t
             JOIN `{self._project}.{self._dataset}.INFORMATION_SCHEMA.COLUMNS` c
                 ON t.table_name = c.table_name
@@ -63,7 +61,8 @@ class BigQueryBackend:
             result = self._client.query(query)
             return [dict(row) for row in result]
 
-        rows = await asyncio.get_event_loop().run_in_executor(None, _run_query)
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, _run_query)
 
         tables_map: dict[str, TableInfo] = {}
         for row in rows:
@@ -76,14 +75,12 @@ class BigQueryBackend:
                     table_type=row.get("table_type", "TABLE"),
                     columns=[],
                 )
-            # TableInfo is frozen, so we build columns as a list and recreate
             cols = list(tables_map[key].columns)
             cols.append(
                 ColumnInfo(
                     name=row["column_name"],
                     data_type=row["data_type"],
                     is_nullable=row.get("is_nullable", "YES") == "YES",
-                    description="",
                 )
             )
             tables_map[key] = tables_map[key].model_copy(update={"columns": cols})
@@ -107,7 +104,8 @@ class BigQueryBackend:
             except Exception as e:
                 return [str(e)]
 
-        return await asyncio.get_event_loop().run_in_executor(None, _dry_run)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _dry_run)
 
     async def execute_sql(self, sql: str) -> list[dict[str, Any]]:
         errors = check_read_only(sql)
@@ -118,7 +116,8 @@ class BigQueryBackend:
             result = self._client.query(sql)
             return [dict(row) for row in result]
 
-        rows = await asyncio.get_event_loop().run_in_executor(None, _execute)
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, _execute)
         logger.info("bigquery_query_executed", row_count=len(rows))
         return rows
 

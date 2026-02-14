@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # LLM Models
     default_model: str = "claude-opus-4-6"
-    secondary_model: str = "gemini-2.5-pro"
+    secondary_model: str = "gemini-3-pro-preview"
     fallback_model: str = "gpt-4o"
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0

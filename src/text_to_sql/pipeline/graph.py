@@ -4,9 +4,9 @@ from typing import Any, TypedDict
 
 import structlog
 from langchain_core.language_models.chat_models import BaseChatModel
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 
 from text_to_sql.db.base import DatabaseBackend
 from text_to_sql.llm.sql_generator import SQLGenerator
@@ -41,8 +41,6 @@ def build_pipeline_graph(
     """
     schema_service = SchemaDiscoveryService(db_backend, schema_cache)
     sql_generator = SQLGenerator(chat_model)
-
-    # --- Node functions ---
 
     async def discover_schema(state: PipelineState) -> PipelineState:
         """Discover database schema and format as context for the LLM."""
@@ -97,15 +95,10 @@ def build_pipeline_graph(
             logger.error("graph_sql_execution_failed", error=str(e))
             return {"error": str(e)}
 
-    # --- Route function ---
-
     def route_after_approval(state: PipelineState) -> str:
-        """Route based on human approval decision."""
         if state.get("approved"):
             return "execute_sql"
         return END
-
-    # --- Build graph ---
 
     builder = StateGraph(PipelineState)
 
@@ -129,10 +122,10 @@ def compile_pipeline(
     db_backend: DatabaseBackend,
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
-    checkpointer: MemorySaver | None = None,
+    checkpointer: InMemorySaver | None = None,
 ):
     """Build and compile the pipeline graph with optional checkpointer."""
     builder = build_pipeline_graph(db_backend, schema_cache, chat_model)
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        checkpointer = InMemorySaver()
     return builder.compile(checkpointer=checkpointer)

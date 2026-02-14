@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from text_to_sql.db.base import DatabaseBackend
-from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
-from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.schema.discovery import SchemaDiscoveryService
 
 
@@ -26,14 +23,13 @@ def create_mcp_server() -> FastMCP:
         return schema.model_dump(mode="json")
 
     @mcp.tool()
-    async def generate_sql(question: str, database: str = "primary") -> dict:
+    async def generate_sql(question: str) -> dict:
         """Generate SQL from a natural language question. Requires human approval before execution.
 
         Args:
             question: The natural language question to convert to SQL.
-            database: Database alias to target.
         """
-        orchestrator: PipelineOrchestrator = mcp.state.orchestrator
+        orchestrator = mcp.state.orchestrator
         record = await orchestrator.submit_question(question)
         return {
             "query_id": record.id,
@@ -50,7 +46,7 @@ def create_mcp_server() -> FastMCP:
         Args:
             sql: The SQL query to validate.
         """
-        db: DatabaseBackend = mcp.state.db_backend
+        db = mcp.state.db_backend
         errors = await db.validate_sql(sql)
         return {"is_valid": len(errors) == 0, "errors": errors}
 
@@ -61,7 +57,7 @@ def create_mcp_server() -> FastMCP:
         Args:
             query_id: The ID of the approved query to execute.
         """
-        orchestrator: PipelineOrchestrator = mcp.state.orchestrator
+        orchestrator = mcp.state.orchestrator
         record = await orchestrator.execute_approved(query_id)
         return {
             "query_id": record.id,
