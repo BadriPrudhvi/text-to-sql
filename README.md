@@ -9,42 +9,45 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
 - **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
-- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, injected into LLM prompts as DDL context
+- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, injected into LLM prompts as DDL context with few-shot examples for improved accuracy
 - **Query history** — In-memory store tracking all queries with status (pending, approved, rejected, executed, failed)
 
 ## Architecture
 
-```
-                         ┌───────────────┐
-                         │   User / IDE  │
-                         └──────┬────────┘
-                                │
-                  ┌─────────────┴─────────────┐
-                  │                             │
-           REST API (/api)               MCP Tools (/mcp)
-                  │                             │
-                  └─────────────┬───────────────┘
-                                │
-                     PipelineOrchestrator
-                                │
-                    ┌───────────▼───────────┐
-                    │  LangGraph ReAct Agent │
-                    │                        │
-                    │  discover_schema       │
-                    │       ↓                │
-                    │  generate_query ←──────│──┐ (ReAct loop)
-                    │       ↓                │  │
-                    │  [tool call?]──────────│──│──→ END (text answer)
-                    │       ↓                │  │
-                    │  check_query           │  │
-                    │       ↓                │  │
-                    │  [valid?]──────────────│──│──→ run_query ──┘
-                    │  [errors?]             │  │
-                    │       ↓                │  │
-                    │  human_approval        │  │ ← interrupt()
-                    │       ↓                │  │
-                    │  run_query ────────────│──┘
-                    └────────────────────────┘
+```mermaid
+graph TD
+    User["User / IDE"]
+    User --> REST["REST API (/api)"]
+    User --> MCP["MCP Tools (/mcp)"]
+    REST --> Orch["PipelineOrchestrator"]
+    MCP --> Orch
+
+    subgraph Agent["LangGraph ReAct Agent"]
+        A["discover_schema<br/><i>Fetch DDL + few-shot examples</i>"]
+        B["generate_query<br/><i>LLM invocation</i>"]
+        C{"should_continue"}
+        D["check_query<br/><i>Validate SQL</i>"]
+        E{"route_after_check"}
+        F["human_approval<br/><i>interrupt()</i>"]
+        G{"route_after_approval"}
+        H["run_query<br/><i>Execute SQL</i>"]
+        END1(["END"])
+        END2(["END"])
+
+        A --> B
+        B --> C
+        C -- "tool call" --> D
+        C -- "text answer" --> END1
+        D --> E
+        E -- "clean" --> H
+        E -- "errors" --> F
+        F --> G
+        G -- "approved" --> H
+        G -- "rejected" --> END2
+        H -- "ReAct loop" --> B
+    end
+
+    Orch --> A
 ```
 
 ## Quick Start
