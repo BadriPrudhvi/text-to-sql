@@ -1,16 +1,21 @@
 # Text-to-SQL Pipeline
 
-A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGraph orchestration, auto-execution of valid queries with human-in-the-loop approval for queries needing review, and both REST API and MCP tool interfaces.
+An enterprise-grade text-to-SQL pipeline with multi-turn conversations, SSE streaming, self-correction, query caching, and human-in-the-loop approval. Built with FastAPI, LangChain, and LangGraph.
 
 ## Features
 
-- **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains via LangChain
-- **LangGraph ReAct agent** — SQL agent with tool-calling loop that generates SQL, executes it, and synthesizes natural language answers. Uses `interrupt()` for human review when validation errors are found
-- **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends
+- **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains and exponential backoff retry
+- **LangGraph ReAct agent** — SQL agent with tool-calling loop that generates SQL, validates results, self-corrects, and synthesizes natural language answers. Uses `interrupt()` for human review when validation errors are found
+- **Multi-turn conversations** — Session-based queries with LangGraph checkpoint persistence, enabling follow-up questions that reference prior context
+- **SSE streaming** — Real-time Server-Sent Events streaming pipeline progress (schema discovery, SQL generation, query execution, answer generation)
+- **Self-correction** — Result validation detects empty aggregates, suspicious negatives, and LIMIT mismatches, feeding warnings back to the LLM for automatic revision
+- **Query caching** — In-memory cache with TTL eviction keyed on normalized question + schema hash for instant repeat answers
+- **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends with parameterized query timeouts
+- **Persistent storage** — SQLite-backed stores for query records, sessions, and LangGraph checkpoints (configurable, defaults to in-memory)
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
-- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, injected into LLM prompts as DDL context with few-shot examples for improved accuracy
-- **Query history** — In-memory store tracking all queries with status (pending, approved, rejected, executed, failed)
+- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, context budgeting, and dynamic table selection (keyword or LLM-based)
+- **Observability** — Structured logging, pipeline metrics, health endpoint, optional LangSmith tracing, and per-IP rate limiting
 
 ## Architecture
 
@@ -31,6 +36,7 @@ graph TD
         F["human_approval<br/><i>interrupt()</i>"]
         G{"route_after_approval"}
         H["run_query<br/><i>Execute SQL</i>"]
+        I["validate_result<br/><i>Self-correction check</i>"]
         END1(["END"])
         END2(["END"])
 
@@ -44,7 +50,8 @@ graph TD
         F --> G
         G -- "approved" --> H
         G -- "rejected" --> END2
-        H -- "ReAct loop" --> B
+        H --> I
+        I -- "ReAct loop" --> B
     end
 
     Orch --> A
@@ -122,6 +129,31 @@ curl -X POST http://localhost:8000/api/approve/{query_id} \
 curl http://localhost:8000/api/history
 ```
 
+### 5. Conversations (multi-turn)
+
+For follow-up questions that reference prior context, use conversation sessions:
+
+```bash
+# Create a session
+SESSION=$(curl -s -X POST http://localhost:8000/api/conversations | jq -r .session_id)
+
+# Ask a question
+curl -X POST http://localhost:8000/api/conversations/$SESSION/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the top 5 genres by track count?"}'
+
+# Follow up (references prior context)
+curl -X POST http://localhost:8000/api/conversations/$SESSION/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Now show me the revenue for those same genres"}'
+```
+
+For real-time progress updates, use the SSE streaming endpoint:
+
+```bash
+curl -N "http://localhost:8000/api/conversations/$SESSION/stream?question=How+many+albums+per+artist"
+```
+
 ### Example Questions (Chinook DB)
 
 The pipeline handles queries from simple lookups to complex analytics:
@@ -157,6 +189,16 @@ All settings are configured via environment variables (or a `.env` file).
 | `LLM_MAX_TOKENS` | `4096` | Max output tokens for LLM |
 | `LLM_TEMPERATURE` | `0.0` | LLM temperature |
 | `SCHEMA_CACHE_TTL_SECONDS` | `3600` | Schema cache TTL in seconds |
+| `SCHEMA_SELECTION_MODE` | `none` | Dynamic table selection: `none`, `keyword`, or `llm` |
+| `STORAGE_TYPE` | `memory` | Store backend: `memory` or `sqlite` (persistent) |
+| `STORAGE_SQLITE_PATH` | `./pipeline.db` | SQLite path for persistent storage |
+| `CACHE_ENABLED` | `true` | Enable query result caching |
+| `CACHE_TTL_SECONDS` | `86400` | Query cache TTL (default 24h) |
+| `MAX_CORRECTION_ATTEMPTS` | `2` | Max self-correction retries per query |
+| `DB_QUERY_TIMEOUT_SECONDS` | `30` | Database query timeout |
+| `LLM_RETRY_ATTEMPTS` | `3` | LLM retry attempts on transient failure |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | `20` | Per-IP rate limit on mutation endpoints |
+| `LANGSMITH_API_KEY` | `""` | LangSmith API key for tracing (optional) |
 | `APP_HOST` | `0.0.0.0` | Server host |
 | `APP_PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Log level |
@@ -255,6 +297,52 @@ Get paginated query history.
 }
 ```
 
+### `POST /api/conversations`
+
+Create a new conversation session for multi-turn queries.
+
+**Response:**
+```json
+{
+  "session_id": "uuid-here"
+}
+```
+
+### `POST /api/conversations/{session_id}/query`
+
+Submit a question within a conversation session. Follow-up questions can reference prior context.
+
+**Request:**
+```json
+{
+  "question": "Now break that down by region"
+}
+```
+
+### `GET /api/conversations/{session_id}/stream`
+
+Stream pipeline events via SSE. Pass the question as a query parameter.
+
+**Query params:** `question` (required)
+
+**Events:** `schema_discovery_started`, `schema_discovered`, `llm_generation_started`, `sql_generated`, `validation_passed`, `query_execution_started`, `query_executed`, `answer_generated`, `done`
+
+### `GET /api/conversations/{session_id}/history`
+
+Get all queries in a conversation session.
+
+### `GET /api/cache/stats`
+
+Get cache hit/miss statistics.
+
+### `POST /api/cache/flush`
+
+Flush all cached queries.
+
+### `GET /api/health`
+
+Health check with pipeline metrics (queries total, executed, failed, cache hits/misses, retries, corrections).
+
 ## MCP Tools
 
 Two MCP tools are available at `/mcp` via Streamable HTTP transport:
@@ -315,9 +403,15 @@ uv run pytest tests/unit/test_graph.py::test_name
 src/text_to_sql/
 ├── api/                  # REST API endpoints
 │   ├── approve.py        # POST /api/approve/{id}
+│   ├── cache.py          # GET /api/cache/stats, POST /api/cache/flush
+│   ├── conversation.py   # Conversation session & SSE streaming endpoints
+│   ├── health.py         # GET /api/health
 │   ├── history.py        # GET /api/history
 │   ├── query.py          # POST /api/query
+│   ├── rate_limit.py     # Sliding-window per-IP rate limiter
 │   └── router.py         # APIRouter aggregation
+├── cache/                # Query result caching
+│   └── query_cache.py    # In-memory cache with TTL + schema hash
 ├── db/                   # Database backends
 │   ├── base.py           # DatabaseBackend protocol + read-only guard
 │   ├── bigquery.py       # BigQuery backend
@@ -326,24 +420,33 @@ src/text_to_sql/
 │   └── sqlite.py         # SQLite backend
 ├── llm/                  # LLM integration
 │   ├── prompts.py        # SQL agent system prompt for ReAct loop
+│   ├── retry.py          # Tenacity-based retry with exponential backoff
 │   └── router.py         # Multi-provider model creation with fallbacks
 ├── mcp/                  # MCP tool server
 │   └── tools.py          # 2 MCP tools via FastMCP
 ├── models/               # Pydantic models
-│   ├── domain.py         # QueryRecord, TableInfo, SchemaInfo, etc.
+│   ├── domain.py         # QueryRecord, SessionInfo, TableInfo, etc.
 │   ├── requests.py       # API request models
 │   └── responses.py      # API response models
+├── observability/        # Metrics and monitoring
+│   └── metrics.py        # Pipeline metrics (counters + uptime)
 ├── pipeline/             # LangGraph orchestration
 │   ├── approval.py       # ApprovalManager state machine
-│   ├── graph.py          # LangGraph ReAct agent with interrupt()
+│   ├── graph.py          # LangGraph ReAct agent with interrupt() + SSE
+│   ├── orchestrator.py   # Session-aware orchestrator with streaming
 │   ├── tools.py          # run_query LangChain tool
-│   └── orchestrator.py   # Thin wrapper around the graph
+│   └── validators.py     # Result validation for self-correction
 ├── schema/               # Schema discovery
 │   ├── cache.py          # TTL-based schema cache
-│   └── discovery.py      # Schema discovery service
-├── store/                # Query storage
+│   ├── discovery.py      # Schema discovery service
+│   └── selector.py       # Dynamic table selection (keyword/LLM)
+├── store/                # Query and session storage
 │   ├── base.py           # QueryStore protocol
-│   └── memory.py         # In-memory implementation
+│   ├── factory.py        # Store factory (memory vs SQLite)
+│   ├── memory.py         # In-memory query store
+│   ├── session.py        # SessionStore protocol + in-memory impl
+│   ├── sqlite_store.py   # SQLite query store
+│   └── sqlite_session_store.py  # SQLite session store
 ├── app.py                # FastAPI application factory
 ├── config.py             # Pydantic Settings configuration
 └── logging.py            # structlog setup
