@@ -23,17 +23,27 @@ def create_chat_model(settings: Settings) -> BaseChatModel:
 
     models: list[BaseChatModel] = []
     for api_key, model_name, provider in providers:
-        if not api_key.get_secret_value():
+        key_value = api_key.get_secret_value()
+        if not key_value or len(key_value) < 10:
             continue
-        models.append(
-            init_chat_model(
-                model_name,
-                model_provider=provider,
-                temperature=settings.llm_temperature,
-                max_tokens=settings.llm_max_tokens,
+        try:
+            models.append(
+                init_chat_model(
+                    model_name,
+                    model_provider=provider,
+                    temperature=settings.llm_temperature,
+                    max_tokens=settings.llm_max_tokens,
+                    api_key=key_value,
+                )
             )
-        )
-        logger.info("llm_provider_added", provider=provider, model=model_name)
+            logger.info("llm_provider_added", provider=provider, model=model_name)
+        except Exception:
+            logger.warning(
+                "llm_provider_skipped",
+                provider=provider,
+                model=model_name,
+                exc_info=True,
+            )
 
     if not models:
         raise ValueError(

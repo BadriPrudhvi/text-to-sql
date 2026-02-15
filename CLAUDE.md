@@ -9,8 +9,11 @@ A text-to-SQL pipeline that converts natural language questions into SQL queries
 ## Commands
 
 ```bash
-# Install
-uv sync                           # Dev install (recommended)
+# Install (requires Python 3.13+ and uv)
+uv sync
+
+# Configure (set at least one LLM API key, defaults to SQLite + Chinook sample DB)
+cp .env.example .env               # then edit .env
 
 # Run
 uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000

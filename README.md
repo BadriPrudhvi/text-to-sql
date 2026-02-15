@@ -46,25 +46,29 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
 
 ### 1. Install
 
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
+
 ```bash
-pip install -e ".[dev]"
+uv sync
 ```
 
 ### 2. Configure
 
-Copy the example environment file and set your API keys:
+Copy the example environment file and add at least one LLM API key:
 
 ```bash
 cp .env.example .env
 ```
 
-You need at least one LLM provider key. The fallback order is: Anthropic → Google Gemini → OpenAI.
+Edit `.env` and set your API key(s). Only providers with keys will be used — the fallback order is Anthropic → Google Gemini → OpenAI.
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=...          # optional
-OPENAI_API_KEY=sk-...       # optional
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+# GOOGLE_API_KEY=             # optional
+# OPENAI_API_KEY=             # optional
 ```
+
+The default config uses SQLite with the included [Chinook sample database](https://github.com/lerocha/chinook-database) (`chinook.db`), which has 11 tables of music store data (artists, albums, tracks, customers, invoices, etc.). No additional database setup is needed.
 
 ### 3. Run
 
@@ -72,11 +76,49 @@ OPENAI_API_KEY=sk-...       # optional
 uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000
 ```
 
-Or with Docker:
+The API docs are available at http://localhost:8000/docs.
+
+### 4. Query
+
+**Step 1 — Submit a question:**
 
 ```bash
-docker compose up
+curl -X POST http://localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the top 5 best-selling artists?"}'
 ```
+
+This returns a `query_id` and the generated SQL. The pipeline pauses for human approval.
+
+**Step 2 — Approve the SQL:**
+
+```bash
+curl -X POST http://localhost:8000/api/approve/{query_id} \
+  -H "Content-Type: application/json" \
+  -d '{"approved": true}'
+```
+
+You can optionally modify the SQL before approving:
+
+```bash
+curl -X POST http://localhost:8000/api/approve/{query_id} \
+  -H "Content-Type: application/json" \
+  -d '{"approved": true, "modified_sql": "SELECT * FROM Artist LIMIT 10"}'
+```
+
+**Step 3 — View history:**
+
+```bash
+curl http://localhost:8000/api/history
+```
+
+### Example Questions (Chinook DB)
+
+- "How many tracks are in each genre?"
+- "What are the top 5 customers by total spending?"
+- "List all albums by Led Zeppelin"
+- "Which employee has the most customers?"
+- "What is the average invoice total by country?"
 
 ## Configuration
 
@@ -87,12 +129,12 @@ All settings are configured via environment variables (or a `.env` file).
 | `ANTHROPIC_API_KEY` | `""` | Anthropic API key |
 | `GOOGLE_API_KEY` | `""` | Google AI API key (for Gemini) |
 | `OPENAI_API_KEY` | `""` | OpenAI API key |
-| `PRIMARY_DB_TYPE` | `bigquery` | Database backend: `bigquery`, `postgres`, or `sqlite` |
+| `PRIMARY_DB_TYPE` | `sqlite` | Database backend: `sqlite`, `postgres`, or `bigquery` |
 | `BIGQUERY_PROJECT` | `""` | GCP project ID |
 | `BIGQUERY_DATASET` | `""` | BigQuery dataset name |
 | `BIGQUERY_CREDENTIALS_PATH` | `""` | Path to GCP service account JSON |
 | `POSTGRES_URL` | `""` | PostgreSQL async connection string |
-| `SQLITE_URL` | `sqlite+aiosqlite:///./local.db` | SQLite connection string |
+| `SQLITE_URL` | `sqlite+aiosqlite:///./chinook.db` | SQLite connection string |
 | `DEFAULT_MODEL` | `claude-opus-4-6` | Primary LLM model (Anthropic) |
 | `SECONDARY_MODEL` | `gemini-3-pro-preview` | Secondary LLM model (Google) |
 | `FALLBACK_MODEL` | `gpt-4o` | Fallback LLM model (OpenAI) |
@@ -191,6 +233,24 @@ Four MCP tools are available at `/mcp` via SSE transport:
 
 ## Database Setup
 
+### SQLite (default)
+
+Uses the included Chinook sample database out of the box. No setup required.
+
+```env
+PRIMARY_DB_TYPE=sqlite
+SQLITE_URL=sqlite+aiosqlite:///./chinook.db
+```
+
+To use your own SQLite database, change `SQLITE_URL` to point to your `.db` file.
+
+### PostgreSQL
+
+```env
+PRIMARY_DB_TYPE=postgres
+POSTGRES_URL=postgresql+asyncpg://user:pass@localhost:5432/mydb
+```
+
 ### BigQuery
 
 ```env
@@ -200,34 +260,20 @@ BIGQUERY_DATASET=my_dataset
 BIGQUERY_CREDENTIALS_PATH=/path/to/service-account.json
 ```
 
-### PostgreSQL
-
-```env
-PRIMARY_DB_TYPE=postgres
-POSTGRES_URL=postgresql+asyncpg://user:pass@localhost:5432/mydb
-```
-
-### SQLite
-
-```env
-PRIMARY_DB_TYPE=sqlite
-SQLITE_URL=sqlite+aiosqlite:///./local.db
-```
-
 ## Testing
 
 ```bash
 # Run all tests
-pytest
-
-# With coverage
-coverage run -m pytest && coverage report
+uv run pytest
 
 # Run only unit tests
-pytest tests/unit/
+uv run pytest tests/unit/
 
 # Run only integration tests
-pytest tests/integration/
+uv run pytest tests/integration/
+
+# Run a single test
+uv run pytest tests/unit/test_graph.py::test_name
 ```
 
 ## Project Structure

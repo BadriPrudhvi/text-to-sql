@@ -56,7 +56,7 @@ async def test_graph_pauses_at_interrupt(compiled_graph) -> None:
     """Graph should pause at human_approval interrupt and return partial state."""
     config = {"configurable": {"thread_id": "test-1"}}
 
-    result = await compiled_graph.ainvoke(
+    await compiled_graph.ainvoke(
         {"question": "How many users?"},
         config=config,
     )

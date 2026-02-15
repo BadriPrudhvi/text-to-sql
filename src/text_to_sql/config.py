@@ -25,12 +25,12 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
 
     # Database
-    primary_db_type: DatabaseType = DatabaseType.BIGQUERY
+    primary_db_type: DatabaseType = DatabaseType.SQLITE
     bigquery_project: str = ""
     bigquery_dataset: str = ""
     bigquery_credentials_path: str = ""
     postgres_url: str = ""
-    sqlite_url: str = "sqlite+aiosqlite:///./local.db"
+    sqlite_url: str = "sqlite+aiosqlite:///./chinook.db"
 
     # LLM Models
     default_model: str = "claude-opus-4-6"

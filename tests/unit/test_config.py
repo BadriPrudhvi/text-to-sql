@@ -8,8 +8,8 @@ from text_to_sql.config import DatabaseType, Settings
 def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
     monkeypatch.delenv("PRIMARY_DB_TYPE", raising=False)
-    settings = Settings()
-    assert settings.primary_db_type == DatabaseType.BIGQUERY
+    settings = Settings(_env_file=None)
+    assert settings.primary_db_type == DatabaseType.SQLITE
     assert settings.llm_temperature == 0.0
     assert settings.schema_cache_ttl_seconds == 3600
     assert settings.default_model == "claude-opus-4-6"
@@ -53,7 +53,7 @@ def test_all_api_keys_default_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.anthropic_api_key.get_secret_value() == ""
     assert settings.google_api_key.get_secret_value() == ""
     assert settings.openai_api_key.get_secret_value() == ""

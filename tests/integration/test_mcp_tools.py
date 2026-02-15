@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from text_to_sql.mcp.tools import create_mcp_server
 
 
