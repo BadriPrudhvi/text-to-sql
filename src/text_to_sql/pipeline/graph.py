@@ -4,7 +4,8 @@ from typing import Any, TypedDict
 
 import structlog
 from langchain_core.language_models.chat_models import BaseChatModel
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
@@ -122,10 +123,10 @@ def compile_pipeline(
     db_backend: DatabaseBackend,
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
-    checkpointer: InMemorySaver | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
 ):
     """Build and compile the pipeline graph with optional checkpointer."""
     builder = build_pipeline_graph(db_backend, schema_cache, chat_model)
     if checkpointer is None:
-        checkpointer = InMemorySaver()
+        checkpointer = MemorySaver()
     return builder.compile(checkpointer=checkpointer)

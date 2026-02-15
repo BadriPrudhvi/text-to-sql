@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from text_to_sql.schema.discovery import SchemaDiscoveryService
 
 
 def create_mcp_server() -> FastMCP:
     """Create the MCP server with text-to-SQL tools."""
-    mcp = FastMCP(
-        "Text-to-SQL Tools",
-    )
+    mcp = FastMCP("Text-to-SQL Tools")
 
     @mcp.tool()
     async def schema_discovery(force_refresh: bool = False) -> dict:

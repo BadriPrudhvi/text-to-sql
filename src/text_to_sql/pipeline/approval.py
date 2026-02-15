@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from text_to_sql.db.base import check_read_only
 from text_to_sql.models.domain import ApprovalStatus, QueryRecord
 from text_to_sql.store.base import QueryStore
 
@@ -27,6 +28,9 @@ class ApprovalManager:
                 f"(current status: {record.approval_status.value})"
             )
         if modified_sql:
+            errors = check_read_only(modified_sql)
+            if errors:
+                raise ValueError(f"Modified SQL rejected: {errors[0]}")
             record.generated_sql = modified_sql
         record.approval_status = ApprovalStatus.APPROVED
         record.approved_at = datetime.now(timezone.utc)

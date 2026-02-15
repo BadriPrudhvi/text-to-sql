@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from text_to_sql.api.router import api_router
 from text_to_sql.config import get_settings
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
             db_backend=db_backend,
             schema_cache=schema_cache,
             chat_model=chat_model,
-            checkpointer=InMemorySaver(),
+            checkpointer=MemorySaver(),
         )
 
         orchestrator = PipelineOrchestrator(graph=graph, query_store=query_store)
@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(api_router, prefix="/api")
-    app.mount("/mcp", mcp_server.sse_app())
+    app.mount("/mcp", mcp_server.http_app())
 
     return app
 

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from text_to_sql.models.domain import ColumnInfo, TableInfo
@@ -42,7 +42,7 @@ def fake_chat_model() -> FakeListChatModel:
 
 @pytest.fixture
 def compiled_graph(mock_backend, fake_chat_model):
-    checkpointer = InMemorySaver()
+    checkpointer = MemorySaver()
     return compile_pipeline(
         db_backend=mock_backend,
         schema_cache=SchemaCache(ttl_seconds=3600),

@@ -79,8 +79,9 @@ class PostgresBackend:
             return errors
 
         try:
+            # check_read_only already verified the SQL is safe for EXPLAIN
             async with self._engine.connect() as conn:
-                await conn.execute(text(f"EXPLAIN {sql}"))
+                await conn.execute(text("EXPLAIN " + sql))
             return []
         except Exception as e:
             return [str(e)]

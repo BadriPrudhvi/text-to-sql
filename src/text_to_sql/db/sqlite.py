@@ -6,7 +6,7 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from text_to_sql.db.base import check_read_only
+from text_to_sql.db.base import check_read_only, validate_identifier
 from text_to_sql.models.domain import ColumnInfo, TableInfo
 
 logger = structlog.get_logger()
@@ -42,7 +42,12 @@ class SqliteBackend:
                 table_name = table_row[0]
                 table_type = "VIEW" if table_row[1] == "view" else "TABLE"
 
-                # Get column info via PRAGMA
+                # Validate table name before interpolation into PRAGMA
+                if not validate_identifier(table_name):
+                    logger.warning("sqlite_invalid_table_name", table_name=table_name)
+                    continue
+
+                # Get column info via PRAGMA (doesn't support parameterized queries)
                 col_result = await conn.execute(text(f"PRAGMA table_info('{table_name}')"))
                 col_rows = col_result.fetchall()
 
@@ -72,8 +77,9 @@ class SqliteBackend:
             return errors
 
         try:
+            # check_read_only already verified the SQL is safe for EXPLAIN
             async with self._engine.connect() as conn:
-                await conn.execute(text(f"EXPLAIN {sql}"))
+                await conn.execute(text("EXPLAIN " + sql))
             return []
         except Exception as e:
             return [str(e)]

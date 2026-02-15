@@ -12,5 +12,5 @@ class QueryRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     approved: bool
     modified_sql: str | None = Field(
-        default=None, description="Optionally edit SQL before approval"
+        default=None, max_length=10000, description="Optionally edit SQL before approval"
     )
