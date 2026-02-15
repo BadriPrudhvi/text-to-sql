@@ -24,5 +24,6 @@ async def submit_query(body: QueryRequest, request: Request) -> QueryResponse:
         approval_status=record.approval_status,
         message=status_message(record.approval_status),
         result=record.result,
+        answer=record.answer,
         error=record.error,
     )

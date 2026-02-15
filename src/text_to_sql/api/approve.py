@@ -31,5 +31,6 @@ async def approve_query(
         query_id=record.id,
         approval_status=record.approval_status,
         result=record.result,
+        answer=record.answer,
         error=record.error,
     )

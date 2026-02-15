@@ -13,6 +13,8 @@ def status_message(status: ApprovalStatus) -> str:
         return "Query executed successfully."
     if status == ApprovalStatus.FAILED:
         return "Query execution failed."
+    if status == ApprovalStatus.REJECTED:
+        return "Query rejected by user."
     return "SQL generated. Awaiting approval."
 
 
@@ -24,6 +26,7 @@ class QueryResponse(BaseModel):
     approval_status: ApprovalStatus
     message: str = ""
     result: list[dict[str, Any]] | None = None
+    answer: str | None = None
     error: str | None = None
 
 
@@ -31,6 +34,7 @@ class ApprovalResponse(BaseModel):
     query_id: str
     approval_status: ApprovalStatus
     result: list[dict[str, Any]] | None = None
+    answer: str | None = None
     error: str | None = None
 
 
