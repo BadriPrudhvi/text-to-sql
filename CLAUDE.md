@@ -33,26 +33,15 @@ uv run mypy .
 
 ### Pipeline Flow (LangGraph ReAct Agent)
 ```
-discover_schema → generate_query ←─────────── run_query
-                       │                          ▲   ▲
-                 [should_continue]                 │   │
-                  ╱            ╲                   │   │
-            tool call       text answer            │   │
-                │               │                  │   │
-                ▼              END                  │   │
-           check_query                              │   │
-                │                                   │   │
-         [route_after_check]                        │   │
-           ╱            ╲                           │   │
-        clean         errors                        │   │
-          │               │                         │   │
-          │               ▼                         │   │
-          │        human_approval ── approved ───────┘   │
-          │               │                             │
-          │            rejected                          │
-          │               │                             │
-          └───────────────│─────────────────────────────┘
-                         END
+discover_schema → generate_query → [should_continue] → check_query → [route_after_check]
+                       ▲            │                                    │            │
+                       │         text answer                          clean        errors
+                       │            │                                    │            │
+                       │           END                                  │    human_approval
+                       │                                                │     │           │
+                       └──────────────────── run_query ◄────────────────┘  approved   rejected
+                                                                                        │
+                                                                                       END
 ```
 Uses `SQLAgentState(MessagesState)` — a hybrid of LangGraph's MessagesState with custom fields (`generated_sql`, `validation_errors`, `result`, `answer`, `error`). The LLM is bound with a `run_query` tool. After `run_query`, the loop returns to `generate_query` where the model sees results in message history and generates a natural language answer (no tool calls → routes to END). Queries with validation errors route to `human_approval` which uses LangGraph's `interrupt()` to pause for human review. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`. Read-only enforcement is handled by the database backends (`check_read_only()` in `db/*.py`) as defense-in-depth.
 

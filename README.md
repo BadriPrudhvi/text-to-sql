@@ -14,61 +14,40 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
 
 ## Architecture
 
-```
-                    ┌──────────────┐
-                    │  User / IDE  │
-                    └──────┬───────┘
-                           │
-             ┌─────────────┴─────────────┐
-             │                           │
-      REST API (/api)             MCP Tools (/mcp)
-             │                           │
-             └─────────────┬─────────────┘
-                           │
-                PipelineOrchestrator
-                           │
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │                  LangGraph ReAct Agent                  │
-  │                                                         │
-  │   ┌──────────────────┐                                  │
-  │   │ discover_schema  │  Fetch DDL + inject system prompt│
-  │   └────────┬─────────┘  with few-shot examples          │
-  │            ▼                                             │
-  │   ┌──────────────────┐◄──────────────────────────┐      │
-  │   │ generate_query   │  LLM invocation (ReAct)   │      │
-  │   └────────┬─────────┘                           │      │
-  │            │                                     │      │
-  │      [should_continue]                           │      │
-  │       ╱            ╲                             │      │
-  │  tool call      text answer                      │      │
-  │      │              │                            │      │
-  │      ▼             END                           │      │
-  │   ┌──────────────────┐                           │      │
-  │   │  check_query     │  Validate SQL             │      │
-  │   └────────┬─────────┘                           │      │
-  │            │                                     │      │
-  │     [route_after_check]                          │      │
-  │       ╱            ╲                             │      │
-  │    clean         errors                          │      │
-  │      │              │                            │      │
-  │      │              ▼                            │      │
-  │      │     ┌──────────────────┐                  │      │
-  │      │     │ human_approval   │  interrupt()     │      │
-  │      │     └────────┬─────────┘                  │      │
-  │      │              │                            │      │
-  │      │     [route_after_approval]                │      │
-  │      │       ╱            ╲                      │      │
-  │      │   approved       rejected                 │      │
-  │      │      │              │                     │      │
-  │      ▼      ▼             END                    │      │
-  │   ┌──────────────────┐                           │      │
-  │   │   run_query      │  Execute SQL via backend  │      │
-  │   └────────┬─────────┘                           │      │
-  │            │                                     │      │
-  │            └─────────────────────────────────────┘      │
-  │                      (loop back)                        │
-  └─────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    User["User / IDE"]
+    User --> REST["REST API (/api)"]
+    User --> MCP["MCP Tools (/mcp)"]
+    REST --> Orch["PipelineOrchestrator"]
+    MCP --> Orch
+
+    subgraph Agent["LangGraph ReAct Agent"]
+        A["discover_schema<br/><i>Fetch DDL + few-shot examples</i>"]
+        B["generate_query<br/><i>LLM invocation</i>"]
+        C{"should_continue"}
+        D["check_query<br/><i>Validate SQL</i>"]
+        E{"route_after_check"}
+        F["human_approval<br/><i>interrupt()</i>"]
+        G{"route_after_approval"}
+        H["run_query<br/><i>Execute SQL</i>"]
+        END1(["END"])
+        END2(["END"])
+
+        A --> B
+        B --> C
+        C -- "tool call" --> D
+        C -- "text answer" --> END1
+        D --> E
+        E -- "clean" --> H
+        E -- "errors" --> F
+        F --> G
+        G -- "approved" --> H
+        G -- "rejected" --> END2
+        H -- "ReAct loop" --> B
+    end
+
+    Orch --> A
 ```
 
 ## Quick Start
