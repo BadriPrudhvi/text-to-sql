@@ -44,4 +44,7 @@ async def submit_query(body: QueryRequest, request: Request) -> QueryResponse:
         result=record.result,
         answer=record.answer,
         error=record.error,
+        query_type=record.query_type,
+        analysis_plan=record.analysis_plan,
+        analysis_steps=record.analysis_steps,
     )

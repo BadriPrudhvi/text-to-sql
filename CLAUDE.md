@@ -9,7 +9,7 @@ Text-to-SQL pipeline: natural language → SQL → results. Multi-turn conversat
 ```bash
 uv sync                                          # Install
 cp .env.example .env                             # Configure (set at least one LLM API key)
-uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000  # Run
+uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000  # Run
 uv run pytest                                    # Test (all)
 uv run pytest tests/unit/test_graph.py::test_name # Test (single)
 uv run ruff check .                              # Lint

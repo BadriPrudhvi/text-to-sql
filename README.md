@@ -110,7 +110,7 @@ The default config uses SQLite with the included [Chinook sample database](https
 ### 3. Run
 
 ```bash
-uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000
+uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000
 ```
 
 The API docs are available at http://localhost:8000/docs.

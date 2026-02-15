@@ -28,6 +28,9 @@ class QueryResponse(BaseModel):
     result: list[dict[str, Any]] | None = None
     answer: str | None = None
     error: str | None = None
+    query_type: str = "simple"
+    analysis_plan: list[dict[str, str]] | None = None
+    analysis_steps: list[dict[str, Any]] | None = None
 
 
 class ApprovalResponse(BaseModel):

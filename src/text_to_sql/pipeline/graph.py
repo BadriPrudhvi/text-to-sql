@@ -5,7 +5,7 @@ from typing import Any
 
 import structlog
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, RemoveMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.config import get_stream_writer
@@ -126,7 +126,14 @@ def build_pipeline_graph(
                 few_shot_examples=FEW_SHOT_EXAMPLES,
             )
         )
-        return {"messages": [system_msg]}
+        # Remove any prior SystemMessages to avoid "multiple non-consecutive
+        # system messages" errors on multi-turn session queries.
+        removals = [
+            RemoveMessage(id=m.id)
+            for m in state["messages"]
+            if isinstance(m, SystemMessage)
+        ]
+        return {"messages": removals + [system_msg]}
 
     async def generate_query(state: SQLAgentState) -> dict:
         """Invoke the LLM with tools. It either makes a tool call (SQL) or returns text (answer)."""

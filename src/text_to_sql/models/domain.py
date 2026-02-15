@@ -63,6 +63,9 @@ class QueryRecord(BaseModel):
     result: list[dict[str, Any]] | None = None
     answer: str | None = None
     error: str | None = None
+    query_type: str = "simple"
+    analysis_plan: list[dict[str, str]] | None = None
+    analysis_steps: list[dict[str, Any]] | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     approved_at: datetime | None = None
     executed_at: datetime | None = None
