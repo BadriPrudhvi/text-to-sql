@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+import json
+from typing import Any
 
 import structlog
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import interrupt
 
 from text_to_sql.db.base import DatabaseBackend
-from text_to_sql.llm.sql_generator import SQLGenerator
+from text_to_sql.llm.prompts import FEW_SHOT_EXAMPLES, SQL_AGENT_SYSTEM_PROMPT
+from text_to_sql.pipeline.tools import create_run_query_tool
 from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.schema.discovery import SchemaDiscoveryService
 
 logger = structlog.get_logger()
 
 
-class PipelineState(TypedDict, total=False):
-    """State flowing through the text-to-SQL LangGraph pipeline."""
+class SQLAgentState(MessagesState):
+    """Extends MessagesState with structured fields for API responses."""
 
-    question: str
-    dialect: str
-    schema_context: str
-    generated_sql: str
-    validation_errors: list[str]
-    approved: bool | None
-    modified_sql: str | None
-    result: list[dict[str, Any]] | None
-    error: str | None
+    generated_sql: str | None = None
+    validation_errors: list[str] = []
+    result: list[dict[str, Any]] | None = None
+    answer: str | None = None
+    error: str | None = None
 
 
 def build_pipeline_graph(
@@ -36,42 +35,57 @@ def build_pipeline_graph(
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
 ) -> StateGraph:
-    """Build the LangGraph StateGraph for text-to-SQL pipeline."""
+    """Build the LangGraph StateGraph for text-to-SQL agent pipeline."""
     schema_service = SchemaDiscoveryService(db_backend, schema_cache)
-    sql_generator = SQLGenerator(chat_model)
+    run_query_tool = create_run_query_tool(db_backend)
+    model_with_tools = chat_model.bind_tools([run_query_tool])
 
-    async def discover_schema(state: PipelineState) -> PipelineState:
-        """Discover database schema and format as context for the LLM."""
+    async def discover_schema(state: SQLAgentState) -> dict:
+        """Discover database schema and inject as system message."""
         schema = await schema_service.get_schema()
         context = schema_service.schema_to_prompt_context(schema)
+        dialect = db_backend.backend_type
         logger.info("graph_schema_discovered", table_count=len(schema.tables))
-        return {
-            "schema_context": context,
-            "dialect": db_backend.backend_type,
-        }
 
-    async def generate_sql(state: PipelineState) -> PipelineState:
-        """Generate SQL from the natural language question using the LLM."""
-        sql = await sql_generator.generate(
-            question=state["question"],
-            schema_context=state["schema_context"],
-            dialect=state["dialect"],
+        system_msg = SystemMessage(
+            content=SQL_AGENT_SYSTEM_PROMPT.format(
+                dialect=dialect,
+                schema_context=context,
+                top_k=5,
+                few_shot_examples=FEW_SHOT_EXAMPLES,
+            )
         )
-        logger.info("graph_sql_generated", sql=sql)
-        return {"generated_sql": sql}
+        return {"messages": [system_msg]}
 
-    async def validate_sql(state: PipelineState) -> PipelineState:
-        """Validate the generated SQL against the database."""
-        errors = await db_backend.validate_sql(state["generated_sql"])
+    async def generate_query(state: SQLAgentState) -> dict:
+        """Invoke the LLM with tools. It either makes a tool call (SQL) or returns text (answer)."""
+        response = await model_with_tools.ainvoke(state["messages"])
+
+        updates: dict[str, Any] = {"messages": [response]}
+
+        if isinstance(response, AIMessage) and response.tool_calls:
+            sql = response.tool_calls[0]["args"].get("query", "")
+            updates["generated_sql"] = sql
+            logger.info("graph_sql_generated", sql=sql)
+        elif isinstance(response, AIMessage) and response.content:
+            updates["answer"] = str(response.content)
+            logger.info("graph_answer_generated", answer=updates["answer"][:100])
+
+        return updates
+
+    async def check_query(state: SQLAgentState) -> dict:
+        """Validate the SQL from the last tool call."""
+        sql = state.get("generated_sql", "")
+        errors = await db_backend.validate_sql(sql)
         if errors:
             logger.warning("graph_sql_validation_errors", errors=errors)
         return {"validation_errors": errors}
 
-    async def human_approval(state: PipelineState) -> PipelineState:
+    async def human_approval(state: SQLAgentState) -> dict:
         """Pause execution and wait for human approval via interrupt()."""
         decision = interrupt(
             {
-                "generated_sql": state["generated_sql"],
+                "generated_sql": state.get("generated_sql", ""),
                 "validation_errors": state.get("validation_errors", []),
                 "message": "Review the generated SQL. Resume with {'approved': true/false, 'modified_sql': '...'}",
             }
@@ -79,44 +93,66 @@ def build_pipeline_graph(
         approved = decision.get("approved", False) if isinstance(decision, dict) else bool(decision)
         modified_sql = decision.get("modified_sql") if isinstance(decision, dict) else None
 
-        if modified_sql:
-            return {"approved": approved, "modified_sql": modified_sql, "generated_sql": modified_sql}
-        return {"approved": approved}
+        if not approved:
+            return {"error": "Query rejected by user."}
 
-    async def execute_sql(state: PipelineState) -> PipelineState:
-        """Execute the approved SQL query."""
+        if modified_sql:
+            return {"generated_sql": modified_sql}
+        return {}
+
+    async def run_query(state: SQLAgentState) -> dict:
+        """Execute the SQL directly via db_backend and append a ToolMessage for the ReAct loop."""
+        sql = state.get("generated_sql", "")
+
+        # Find the tool_call_id from the last AIMessage to create a proper ToolMessage
+        tool_call_id = "unknown"
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                tool_call_id = msg.tool_calls[0]["id"]
+                break
+
         try:
-            result = await db_backend.execute_sql(state["generated_sql"])
+            result = await db_backend.execute_sql(sql)
+            result_json = json.dumps(result, default=str)
             logger.info("graph_sql_executed", row_count=len(result))
-            return {"result": result}
+            tool_msg = ToolMessage(content=result_json, tool_call_id=tool_call_id)
+            return {"messages": [tool_msg], "result": result}
         except Exception as e:
             logger.error("graph_sql_execution_failed", error=str(e))
-            return {"error": "Query execution failed."}
+            error_msg = ToolMessage(content=f"Error: {e}", tool_call_id=tool_call_id)
+            return {"messages": [error_msg], "error": "Query execution failed."}
 
-    def route_after_validation(state: PipelineState) -> str:
-        if state.get("validation_errors"):
-            return "human_approval"
-        return "execute_sql"
-
-    def route_after_approval(state: PipelineState) -> str:
-        if state.get("approved"):
-            return "execute_sql"
+    def should_continue(state: SQLAgentState) -> str:
+        """Route after generate_query: tool calls -> check_query, text -> END."""
+        last = state["messages"][-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "check_query"
         return END
 
-    builder = StateGraph(PipelineState)
+    def route_after_check(state: SQLAgentState) -> str:
+        if state.get("validation_errors"):
+            return "human_approval"
+        return "run_query"
+
+    def route_after_approval(state: SQLAgentState) -> str:
+        if state.get("error"):
+            return END
+        return "run_query"
+
+    builder = StateGraph(SQLAgentState)
 
     builder.add_node("discover_schema", discover_schema)
-    builder.add_node("generate_sql", generate_sql)
-    builder.add_node("validate_sql", validate_sql)
+    builder.add_node("generate_query", generate_query)
+    builder.add_node("check_query", check_query)
     builder.add_node("human_approval", human_approval)
-    builder.add_node("execute_sql", execute_sql)
+    builder.add_node("run_query", run_query)
 
     builder.add_edge(START, "discover_schema")
-    builder.add_edge("discover_schema", "generate_sql")
-    builder.add_edge("generate_sql", "validate_sql")
-    builder.add_conditional_edges("validate_sql", route_after_validation, ["execute_sql", "human_approval"])
-    builder.add_conditional_edges("human_approval", route_after_approval, ["execute_sql", END])
-    builder.add_edge("execute_sql", END)
+    builder.add_edge("discover_schema", "generate_query")
+    builder.add_conditional_edges("generate_query", should_continue, ["check_query", END])
+    builder.add_conditional_edges("check_query", route_after_check, ["run_query", "human_approval"])
+    builder.add_conditional_edges("human_approval", route_after_approval, ["run_query", END])
+    builder.add_edge("run_query", "generate_query")  # ReAct loop
 
     return builder
 
