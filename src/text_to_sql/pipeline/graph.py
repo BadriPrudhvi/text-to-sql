@@ -34,16 +34,56 @@ def build_pipeline_graph(
     db_backend: DatabaseBackend,
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
+    include_tables: list[str] | None = None,
+    exclude_tables: list[str] | None = None,
+    context_max_tokens: int = 16000,
+    context_schema_budget_pct: float = 0.6,
+    context_history_max_messages: int = 10,
+    schema_selection_mode: str = "none",
+    schema_max_selected_tables: int = 15,
 ) -> StateGraph:
     """Build the LangGraph StateGraph for text-to-SQL agent pipeline."""
-    schema_service = SchemaDiscoveryService(db_backend, schema_cache)
+    schema_service = SchemaDiscoveryService(
+        db_backend, schema_cache,
+        include_tables=include_tables,
+        exclude_tables=exclude_tables,
+    )
+    schema_budget = int(context_max_tokens * context_schema_budget_pct)
     run_query_tool = create_run_query_tool(db_backend)
     model_with_tools = chat_model.bind_tools([run_query_tool])
 
     async def discover_schema(state: SQLAgentState) -> dict:
         """Discover database schema and inject as system message."""
+        from text_to_sql.schema.selector import TableSelector
+
         schema = await schema_service.get_schema()
-        context = schema_service.schema_to_prompt_context(schema)
+
+        # Phase 3: Dynamic schema selection
+        tables = schema.tables
+        if schema_selection_mode != "none" and tables:
+            selector = TableSelector()
+            user_question = ""
+            for msg in reversed(state["messages"]):
+                if hasattr(msg, "content") and not isinstance(msg, (AIMessage, SystemMessage, ToolMessage)):
+                    user_question = str(msg.content)
+                    break
+
+            if user_question:
+                if schema_selection_mode == "llm":
+                    tables = await selector.select_by_llm(
+                        user_question, tables, chat_model,
+                        max_tables=schema_max_selected_tables,
+                    )
+                else:
+                    tables = selector.select_by_keywords(
+                        user_question, tables,
+                        max_tables=schema_max_selected_tables,
+                    )
+                from text_to_sql.models.domain import SchemaInfo as _SI
+                schema = _SI(tables=tables, discovered_at=schema.discovered_at)
+
+        # Phase 2: Budgeted schema rendering
+        context = schema_service.schema_to_prompt_context_budgeted(schema, schema_budget)
         dialect = db_backend.backend_type
         logger.info("graph_schema_discovered", table_count=len(schema.tables))
 
@@ -59,7 +99,12 @@ def build_pipeline_graph(
 
     async def generate_query(state: SQLAgentState) -> dict:
         """Invoke the LLM with tools. It either makes a tool call (SQL) or returns text (answer)."""
-        response = await model_with_tools.ainvoke(state["messages"])
+        messages = state["messages"]
+        # Phase 2D: Truncate history to keep context manageable
+        if len(messages) > context_history_max_messages + 1:
+            # Keep system message (index 0) + last N messages
+            messages = [messages[0]] + messages[-(context_history_max_messages):]
+        response = await model_with_tools.ainvoke(messages)
 
         updates: dict[str, Any] = {"messages": [response]}
 
@@ -162,9 +207,25 @@ def compile_pipeline(
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
     checkpointer: BaseCheckpointSaver | None = None,
+    include_tables: list[str] | None = None,
+    exclude_tables: list[str] | None = None,
+    context_max_tokens: int = 16000,
+    context_schema_budget_pct: float = 0.6,
+    context_history_max_messages: int = 10,
+    schema_selection_mode: str = "none",
+    schema_max_selected_tables: int = 15,
 ):
     """Build and compile the pipeline graph with optional checkpointer."""
-    builder = build_pipeline_graph(db_backend, schema_cache, chat_model)
+    builder = build_pipeline_graph(
+        db_backend, schema_cache, chat_model,
+        include_tables=include_tables,
+        exclude_tables=exclude_tables,
+        context_max_tokens=context_max_tokens,
+        context_schema_budget_pct=context_schema_budget_pct,
+        context_history_max_messages=context_history_max_messages,
+        schema_selection_mode=schema_selection_mode,
+        schema_max_selected_tables=schema_max_selected_tables,
+    )
     if checkpointer is None:
         checkpointer = MemorySaver()
     return builder.compile(checkpointer=checkpointer)

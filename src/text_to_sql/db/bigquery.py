@@ -49,11 +49,21 @@ class BigQueryBackend:
                 t.table_type,
                 c.column_name,
                 c.data_type,
-                c.is_nullable
+                c.is_nullable,
+                cfp.description AS column_description,
+                topt.option_value AS table_description
             FROM `{self._project}.{self._dataset}.INFORMATION_SCHEMA.TABLES` t
             JOIN `{self._project}.{self._dataset}.INFORMATION_SCHEMA.COLUMNS` c
                 ON t.table_name = c.table_name
                 AND t.table_schema = c.table_schema
+            LEFT JOIN `{self._project}.{self._dataset}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` cfp
+                ON c.table_name = cfp.table_name
+                AND c.table_schema = cfp.table_schema
+                AND c.column_name = cfp.column_name
+            LEFT JOIN `{self._project}.{self._dataset}.INFORMATION_SCHEMA.TABLE_OPTIONS` topt
+                ON t.table_name = topt.table_name
+                AND t.table_schema = topt.table_schema
+                AND topt.option_name = 'description'
             ORDER BY t.table_name, c.ordinal_position
         """
 
@@ -68,11 +78,15 @@ class BigQueryBackend:
         for row in rows:
             key = f"{row['table_schema']}.{row['table_name']}"
             if key not in tables_map:
+                raw_desc = row.get("table_description") or ""
+                # BigQuery wraps option_value in quotes
+                table_desc = raw_desc.strip("'\"")
                 tables_map[key] = TableInfo(
                     catalog=row.get("table_catalog", ""),
                     schema_name=row.get("table_schema", ""),
                     table_name=row["table_name"],
                     table_type=row.get("table_type", "TABLE"),
+                    description=table_desc,
                     columns=[],
                 )
             cols = list(tables_map[key].columns)
@@ -81,6 +95,7 @@ class BigQueryBackend:
                     name=row["column_name"],
                     data_type=row["data_type"],
                     is_nullable=row.get("is_nullable", "YES") == "YES",
+                    description=row.get("column_description") or "",
                 )
             )
             tables_map[key] = tables_map[key].model_copy(update={"columns": cols})
