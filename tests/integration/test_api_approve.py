@@ -7,6 +7,9 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from tests.conftest import FakeToolChatModel, make_agent_responses
+from text_to_sql.pipeline.agents.models import QueryClassification
+
+_SIMPLE = {"QueryClassification": QueryClassification(query_type="simple", reasoning="test")}
 
 
 @pytest.fixture
@@ -17,6 +20,7 @@ async def pending_client():
     """
     bad_sql_model = FakeToolChatModel(
         messages=iter(make_agent_responses("SELECT count(*) FROM nonexistent_table", "There is 1 user.")),
+        structured_responses=_SIMPLE,
     )
 
     with patch("text_to_sql.app.create_chat_model", return_value=bad_sql_model):

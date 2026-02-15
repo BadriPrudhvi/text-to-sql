@@ -6,6 +6,7 @@ An enterprise-grade text-to-SQL pipeline with multi-turn conversations, SSE stre
 
 - **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains and exponential backoff retry
 - **LangGraph ReAct agent** — SQL agent with tool-calling loop that generates SQL, validates results, self-corrects, and synthesizes natural language answers. Uses `interrupt()` for human review when validation errors are found
+- **Multi-agent analytical queries** — Complex analytical questions are automatically classified and routed to a multi-step pipeline: plan analysis steps, execute each SQL query, synthesize comprehensive insights with actionable recommendations
 - **Multi-turn conversations** — Session-based queries with LangGraph checkpoint persistence, enabling follow-up questions that reference prior context
 - **SSE streaming** — Real-time Server-Sent Events streaming pipeline progress (schema discovery, SQL generation, query execution, answer generation)
 - **Self-correction** — Result validation detects empty aggregates, suspicious negatives, and LIMIT mismatches, feeding warnings back to the LLM for automatic revision
@@ -27,20 +28,35 @@ graph TD
     REST --> Orch["PipelineOrchestrator"]
     MCP --> Orch
 
-    subgraph Agent["LangGraph ReAct Agent"]
+    subgraph Agent["LangGraph Pipeline"]
         A["discover_schema<br/><i>Fetch DDL + few-shot examples</i>"]
-        B["generate_query<br/><i>LLM invocation</i>"]
-        C{"should_continue"}
-        D["check_query<br/><i>Validate SQL</i>"]
-        E{"route_after_check"}
-        F["human_approval<br/><i>interrupt()</i>"]
-        G{"route_after_approval"}
-        H["run_query<br/><i>Execute SQL</i>"]
-        I["validate_result<br/><i>Self-correction check</i>"]
+        CL{"classify_query"}
+
+        subgraph Simple["Simple Path (ReAct Agent)"]
+            B["generate_query<br/><i>LLM invocation</i>"]
+            C{"should_continue"}
+            D["check_query<br/><i>Validate SQL</i>"]
+            E{"route_after_check"}
+            F["human_approval<br/><i>interrupt()</i>"]
+            G{"route_after_approval"}
+            H["run_query<br/><i>Execute SQL</i>"]
+            I["validate_result<br/><i>Self-correction check</i>"]
+        end
+
+        subgraph Analytical["Analytical Path (Multi-Agent)"]
+            P["plan_analysis<br/><i>Create multi-step plan</i>"]
+            EX["execute_plan_step<br/><i>Generate + run SQL per step</i>"]
+            SY["synthesize_analysis<br/><i>Combine insights</i>"]
+            VA["validate_analysis<br/><i>Quality checks</i>"]
+        end
+
         END1(["END"])
         END2(["END"])
+        END3(["END"])
 
-        A --> B
+        A --> CL
+        CL -- "simple" --> B
+        CL -- "analytical" --> P
         B --> C
         C -- "tool call" --> D
         C -- "text answer" --> END1
@@ -52,6 +68,12 @@ graph TD
         G -- "rejected" --> END2
         H --> I
         I -- "ReAct loop" --> B
+        P --> EX
+        EX -- "more steps" --> EX
+        EX -- "done" --> SY
+        SY --> VA
+        VA -- "needs revision" --> SY
+        VA -- "passed" --> END3
     end
 
     Orch --> A
@@ -167,6 +189,7 @@ The pipeline handles queries from simple lookups to complex analytics:
 | Multi-JOIN | "Top 5 genres by total sales revenue" | `SELECT g.Name, SUM(il.UnitPrice * il.Quantity) FROM Genre g JOIN Track t ON g.GenreId = t.GenreId JOIN InvoiceLine il ON t.TrackId = il.TrackId GROUP BY g.GenreId ORDER BY 2 DESC LIMIT 5` |
 | Subquery | "Customers who spent more than average" | `SELECT c.FirstName, c.LastName, SUM(i.Total) FROM Customer c JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY c.CustomerId HAVING SUM(i.Total) > (SELECT AVG(t) FROM (SELECT SUM(Total) t FROM Invoice GROUP BY CustomerId))` |
 | Window | "Rank employees by their customers' total purchases" | `SELECT e.FirstName, e.LastName, SUM(i.Total), RANK() OVER (ORDER BY SUM(i.Total) DESC) FROM Employee e JOIN Customer c ON e.EmployeeId = c.SupportRepId JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY e.EmployeeId` |
+| Analytical | "Analyze sales data and recommend ways to increase revenue" | Multi-step plan: monthly trends, top genres, customer segments → synthesized insights with recommendations |
 
 ## Configuration
 
@@ -195,6 +218,8 @@ All settings are configured via environment variables (or a `.env` file).
 | `CACHE_ENABLED` | `true` | Enable query result caching |
 | `CACHE_TTL_SECONDS` | `86400` | Query cache TTL (default 24h) |
 | `MAX_CORRECTION_ATTEMPTS` | `2` | Max self-correction retries per query |
+| `ANALYTICAL_MAX_PLAN_STEPS` | `7` | Max analysis steps for analytical queries |
+| `ANALYTICAL_MAX_SYNTHESIS_ATTEMPTS` | `1` | Max re-synthesis attempts on quality check failure |
 | `DB_QUERY_TIMEOUT_SECONDS` | `30` | Database query timeout |
 | `LLM_RETRY_ATTEMPTS` | `3` | LLM retry attempts on transient failure |
 | `RATE_LIMIT_REQUESTS_PER_MINUTE` | `20` | Per-IP rate limit on mutation endpoints |
@@ -325,7 +350,9 @@ Stream pipeline events via SSE. Pass the question as a query parameter.
 
 **Query params:** `question` (required)
 
-**Events:** `schema_discovery_started`, `schema_discovered`, `llm_generation_started`, `sql_generated`, `validation_passed`, `query_execution_started`, `query_executed`, `answer_generated`, `done`
+**Events (simple path):** `schema_discovery_started`, `schema_discovered`, `classifying_query`, `query_classified`, `llm_generation_started`, `sql_generated`, `validation_passed`, `query_execution_started`, `query_executed`, `answer_generated`, `done`
+
+**Events (analytical path):** `schema_discovery_started`, `schema_discovered`, `classifying_query`, `query_classified`, `planning_analysis`, `analysis_plan_created`, `plan_step_started`, `plan_step_sql_generated`, `plan_step_executed`, `plan_step_failed`, `analysis_synthesis_started`, `analysis_complete`, `analysis_validation_passed`, `done`
 
 ### `GET /api/conversations/{session_id}/history`
 
@@ -431,8 +458,16 @@ src/text_to_sql/
 ├── observability/        # Metrics and monitoring
 │   └── metrics.py        # Pipeline metrics (counters + uptime)
 ├── pipeline/             # LangGraph orchestration
+│   ├── agents/           # Multi-agent analytical query nodes
+│   │   ├── analyst.py    # Synthesis agent — combines results into insights
+│   │   ├── analysis_validator.py  # Deterministic quality checks
+│   │   ├── classifier.py # Query classifier (simple vs analytical)
+│   │   ├── executor.py   # Plan step executor — SQL per step
+│   │   ├── models.py     # Pydantic structured output models
+│   │   ├── planner.py    # Analysis planner — multi-step plans
+│   │   └── prompts.py    # Agent prompts
 │   ├── approval.py       # ApprovalManager state machine
-│   ├── graph.py          # LangGraph ReAct agent with interrupt() + SSE
+│   ├── graph.py          # LangGraph pipeline with classification branching
 │   ├── orchestrator.py   # Session-aware orchestrator with streaming
 │   ├── tools.py          # run_query LangChain tool
 │   └── validators.py     # Result validation for self-correction

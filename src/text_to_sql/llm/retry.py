@@ -38,7 +38,7 @@ def create_invoke_with_retry(
     )
     async def invoke_with_retry(
         model: Any, messages: list[BaseMessage]
-    ) -> BaseMessage:
+    ) -> Any:
         return await model.ainvoke(messages)
 
     return invoke_with_retry

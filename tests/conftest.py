@@ -10,10 +10,29 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
 
+class FakeStructuredRunnable:
+    """Wrapper that returns pre-configured Pydantic models from ainvoke()."""
+
+    def __init__(self, response: Any) -> None:
+        self._response = response
+
+    async def ainvoke(self, messages: Any, **kwargs: Any) -> Any:
+        return self._response
+
+
 class FakeToolChatModel(GenericFakeChatModel):
-    """GenericFakeChatModel with bind_tools support (no-op, returns self)."""
+    """GenericFakeChatModel with bind_tools and with_structured_output support."""
+
+    structured_responses: dict[str, Any] = {}
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> FakeToolChatModel:
+        return self
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
+        name = schema.__name__ if hasattr(schema, "__name__") else str(schema)
+        resp = self.structured_responses.get(name)
+        if resp is not None:
+            return FakeStructuredRunnable(resp)
         return self
 
 
@@ -63,8 +82,15 @@ def _set_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def mock_chat_model() -> FakeToolChatModel:
     """Create a FakeToolChatModel that returns tool call then answer."""
+    from text_to_sql.pipeline.agents.models import QueryClassification
+
     return FakeToolChatModel(
         messages=iter(make_agent_responses("SELECT count(*) AS total FROM users", "There are 2 users.")),
+        structured_responses={
+            "QueryClassification": QueryClassification(
+                query_type="simple", reasoning="Default test classification"
+            ),
+        },
     )
 
 

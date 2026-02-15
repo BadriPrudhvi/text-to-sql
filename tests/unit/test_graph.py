@@ -8,8 +8,15 @@ from langgraph.types import Command
 
 from tests.conftest import FakeToolChatModel, make_agent_responses, make_answer_msg, make_tool_call_msg
 from text_to_sql.models.domain import ColumnInfo, TableInfo
+from text_to_sql.pipeline.agents.models import QueryClassification
 from text_to_sql.pipeline.graph import build_pipeline_graph, compile_pipeline
 from text_to_sql.schema.cache import SchemaCache
+
+SIMPLE_CLASSIFICATION = QueryClassification(
+    query_type="simple", reasoning="Test default"
+)
+
+_STRUCTURED = {"QueryClassification": SIMPLE_CLASSIFICATION}
 
 
 @pytest.fixture
@@ -36,6 +43,7 @@ def mock_backend() -> AsyncMock:
 def compiled_graph(mock_backend):
     model = FakeToolChatModel(
         messages=iter(make_agent_responses("SELECT count(*) AS total FROM users", "There are 42 users.")),
+        structured_responses=_STRUCTURED,
     )
     return compile_pipeline(
         db_backend=mock_backend,
@@ -69,6 +77,7 @@ async def test_validation_errors_route_to_approval(mock_backend) -> None:
     mock_backend.validate_sql = AsyncMock(return_value=["Unknown table 'foo'"])
     model = FakeToolChatModel(
         messages=iter([make_tool_call_msg("SELECT count(*) FROM foo")] * 10),
+        structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
         db_backend=mock_backend,
@@ -93,6 +102,7 @@ async def test_graph_resume_approved(mock_backend) -> None:
     mock_backend.validate_sql = AsyncMock(return_value=["some error"])
     model = FakeToolChatModel(
         messages=iter(make_agent_responses("SELECT count(*) AS total FROM users", "There are 42 users.")),
+        structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
         db_backend=mock_backend,
@@ -121,6 +131,7 @@ async def test_graph_resume_rejected(mock_backend) -> None:
     mock_backend.validate_sql = AsyncMock(return_value=["some error"])
     model = FakeToolChatModel(
         messages=iter([make_tool_call_msg("SELECT count(*) AS total FROM users")] * 10),
+        structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
         db_backend=mock_backend,
@@ -149,6 +160,7 @@ async def test_graph_resume_with_modified_sql(mock_backend) -> None:
     mock_backend.validate_sql = AsyncMock(return_value=["some error"])
     model = FakeToolChatModel(
         messages=iter(make_agent_responses("SELECT count(*) FROM bad_table", "There are 42 users.")),
+        structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
         db_backend=mock_backend,
@@ -174,6 +186,9 @@ async def test_graph_resume_with_modified_sql(mock_backend) -> None:
 
 def test_build_pipeline_graph_creates_nodes(mock_backend) -> None:
     """Verify the graph builder creates all expected nodes."""
-    model = FakeToolChatModel(messages=iter([make_answer_msg("test")]))
+    model = FakeToolChatModel(
+        messages=iter([make_answer_msg("test")]),
+        structured_responses=_STRUCTURED,
+    )
     builder = build_pipeline_graph(mock_backend, SchemaCache(ttl_seconds=3600), model)
     assert builder is not None
