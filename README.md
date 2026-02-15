@@ -372,12 +372,15 @@ Health check with pipeline metrics (queries total, executed, failed, cache hits/
 
 ## MCP Tools
 
-Two MCP tools are available at `/mcp` via Streamable HTTP transport:
+Five MCP tools are available at `/mcp` via Streamable HTTP transport:
 
 | Tool | Description |
 |------|-------------|
 | `generate_sql` | Generate SQL from a natural language question. Valid queries auto-execute and return results. Queries with validation errors return pending status for approval. |
 | `execute_sql` | Execute a previously approved SQL query by `query_id`. |
+| `create_session` | Create a new conversation session for multi-turn queries. Returns a `session_id`. |
+| `query_in_session` | Ask a question within a session. The LLM remembers prior questions, enabling follow-up queries without repeating context. |
+| `get_session_history` | Get all queries in a conversation session by `session_id`. |
 
 ## Database Setup
 
@@ -450,7 +453,7 @@ src/text_to_sql/
 │   ├── retry.py          # Tenacity-based retry with exponential backoff
 │   └── router.py         # Multi-provider model creation with fallbacks
 ├── mcp/                  # MCP tool server
-│   └── tools.py          # 2 MCP tools via FastMCP
+│   └── tools.py          # 5 MCP tools via FastMCP (single-shot + session-aware)
 ├── models/               # Pydantic models
 │   ├── domain.py         # QueryRecord, SessionInfo, TableInfo, etc.
 │   ├── requests.py       # API request models

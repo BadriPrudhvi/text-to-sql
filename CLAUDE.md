@@ -56,7 +56,7 @@ Sessions (`POST /api/conversations`) share LangGraph checkpoint state via sessio
 | `pipeline/agents/` | Multi-agent nodes: classifier, planner, executor, analyst, analysis validator |
 | `llm/` | LLM provider fallback chain (Anthropic → Google → OpenAI), prompts, retry logic |
 | `db/` | Database backends (BigQuery, PostgreSQL, SQLite) via `DatabaseBackend` protocol |
-| `mcp/` | FastMCP server at `/mcp` — 2 tools: `generate_sql`, `execute_sql` |
+| `mcp/` | FastMCP server at `/mcp` — 5 tools: `generate_sql`, `execute_sql`, `create_session`, `query_in_session`, `get_session_history` |
 | `schema/` | Schema discovery, TTL caching, filtering, budgeted rendering, dynamic selection |
 | `store/` | Query and session storage — in-memory and SQLite implementations |
 | `cache/` | Query result cache with TTL and schema-hash invalidation |

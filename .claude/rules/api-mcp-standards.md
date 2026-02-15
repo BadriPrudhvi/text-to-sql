@@ -55,9 +55,10 @@ except ValueError as e:
 - Tool names use `snake_case`: `schema_discovery`, `generate_sql`, `validate_sql`, `execute_sql`
 
 ### Tool Categories
-1. **Read-only**: `schema_discovery`, `validate_sql` — safe to call anytime
-2. **Generative**: `generate_sql` — creates pending records, requires approval
+1. **Read-only**: `get_session_history` — safe to call anytime
+2. **Generative**: `generate_sql`, `query_in_session` — creates records, may require approval
 3. **Mutating**: `execute_sql` — only works on approved queries
+4. **Session management**: `create_session` — creates new conversation sessions
 
 ## Shared Patterns
 - Both API and MCP access the same `PipelineOrchestrator` and `QueryStore`
