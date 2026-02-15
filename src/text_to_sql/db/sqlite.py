@@ -113,7 +113,7 @@ class SqliteBackend:
         try:
             # check_read_only already verified the SQL is safe for EXPLAIN
             async with self._engine.connect() as conn:
-                await conn.execute(text("EXPLAIN " + sql))
+                await conn.exec_driver_sql("EXPLAIN " + sql)
             return []
         except Exception as e:
             return [str(e)]
@@ -128,7 +128,7 @@ class SqliteBackend:
 
         async def _run() -> list[dict[str, Any]]:
             async with self._engine.connect() as conn:
-                result = await conn.execute(text(sql))
+                result = await conn.exec_driver_sql(sql)
                 return [dict(row._mapping) for row in result]
 
         if timeout_seconds:

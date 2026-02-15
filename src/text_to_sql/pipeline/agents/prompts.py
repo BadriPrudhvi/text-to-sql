@@ -48,7 +48,10 @@ Database schema:
 {previous_results_context}
 
 Rules:
-- Return ONLY a SELECT statement
+- Return ONLY the raw SQL query, nothing else
+- Do NOT include any explanation, commentary, or description after the SQL
+- Do NOT include markdown code fences
+- The query must be a SELECT statement
 - Use appropriate aggregations, grouping, and ordering
 - Limit results to a reasonable number of rows (use LIMIT if needed)
 - The query must be valid {dialect} SQL"""
