@@ -30,7 +30,7 @@ class PipelineOrchestrator:
         return self._approval_manager
 
     async def submit_question(self, question: str) -> QueryRecord:
-        """Phase 1: Run the LangGraph pipeline until it hits the human_approval interrupt."""
+        """Run the LangGraph pipeline. Safe read-only queries auto-execute; unsafe ones pause for approval."""
         record = QueryRecord(
             natural_language=question,
             database_type="",
@@ -38,29 +38,38 @@ class PipelineOrchestrator:
 
         config = {"configurable": {"thread_id": record.id}}
 
-        # Invoke the graph — it will run discover_schema → generate_sql → validate_sql
-        # then pause at human_approval via interrupt()
         await self._graph.ainvoke(
-            {"question": question},
+            {"messages": [{"role": "user", "content": question}]},
             config=config,
         )
 
-        # Read the state after the interrupt
         state = await self._graph.aget_state(config)
         graph_state = state.values
 
-        record.database_type = graph_state.get("dialect", "")
-        record.generated_sql = graph_state.get("generated_sql", "")
+        record.generated_sql = graph_state.get("generated_sql") or ""
         record.validation_errors = graph_state.get("validation_errors", [])
 
-        record = await self._approval_manager.submit_for_approval(record)
+        if not state.next:
+            # Graph ran to completion — query was auto-executed
+            if graph_state.get("error"):
+                record.error = graph_state["error"]
+                record.approval_status = ApprovalStatus.FAILED
+            else:
+                record.result = graph_state.get("result")
+                record.answer = graph_state.get("answer")
+                record.approval_status = ApprovalStatus.EXECUTED
+                record.executed_at = datetime.now(timezone.utc)
+            await self._store.save(record)
+        else:
+            # Graph paused at human_approval interrupt
+            record = await self._approval_manager.submit_for_approval(record)
 
         logger.info(
             "question_submitted",
             query_id=record.id,
             question=question,
             sql=record.generated_sql,
-            validation_errors=record.validation_errors,
+            status=record.approval_status.value,
         )
         return record
 
@@ -76,14 +85,18 @@ class PipelineOrchestrator:
         config = {"configurable": {"thread_id": query_id}}
 
         # Resume the graph from the interrupt with approval decision
-        resume_value = {"approved": True}
+        resume_value: dict[str, Any] = {"approved": True}
         if record.generated_sql:
             resume_value["modified_sql"] = record.generated_sql
 
-        result = await self._graph.ainvoke(
+        await self._graph.ainvoke(
             Command(resume=resume_value),
             config=config,
         )
+
+        # Read final state after graph completes
+        state = await self._graph.aget_state(config)
+        result = state.values
 
         if result.get("error"):
             record.error = result["error"]
@@ -91,7 +104,8 @@ class PipelineOrchestrator:
             logger.error("query_execution_failed", query_id=query_id, error=record.error)
         else:
             record.result = result.get("result")
-            record.generated_sql = result.get("generated_sql", record.generated_sql)
+            record.answer = result.get("answer")
+            record.generated_sql = result.get("generated_sql") or record.generated_sql
             record.approval_status = ApprovalStatus.EXECUTED
             record.executed_at = datetime.now(timezone.utc)
             logger.info(

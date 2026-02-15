@@ -9,32 +9,40 @@ from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
 from text_to_sql.store.memory import InMemoryQueryStore
 
 
-@pytest.fixture
-def mock_graph() -> MagicMock:
-    """Create a mock LangGraph compiled graph."""
+def _make_mock_graph(*, completed: bool = True) -> MagicMock:
+    """Create a mock LangGraph compiled graph.
+
+    Args:
+        completed: If True, graph ran to completion (auto-executed).
+                   If False, graph paused at interrupt (validation errors).
+    """
     graph = MagicMock()
 
-    # Mock ainvoke — first call pauses at interrupt, second call returns results
-    graph.ainvoke = AsyncMock(return_value={
-        "question": "How many users?",
-        "dialect": "sqlite",
-        "generated_sql": "SELECT count(*) AS total FROM users",
-        "validation_errors": [],
-        "result": [{"total": 42}],
-    })
+    graph.ainvoke = AsyncMock(return_value=None)
 
-    # Mock aget_state — returns graph state after interrupt
     mock_state = MagicMock()
     mock_state.values = {
-        "question": "How many users?",
-        "dialect": "sqlite",
-        "schema_context": "CREATE TABLE users (...)",
+        "messages": [],
         "generated_sql": "SELECT count(*) AS total FROM users",
-        "validation_errors": [],
+        "validation_errors": [] if completed else ["Unknown table"],
+        "result": [{"total": 42}] if completed else None,
+        "answer": "There are 42 users." if completed else None,
+        "error": None,
     }
+    mock_state.next = () if completed else ("human_approval",)
     graph.aget_state = AsyncMock(return_value=mock_state)
 
     return graph
+
+
+@pytest.fixture
+def mock_graph() -> MagicMock:
+    return _make_mock_graph(completed=True)
+
+
+@pytest.fixture
+def mock_graph_pending() -> MagicMock:
+    return _make_mock_graph(completed=False)
 
 
 @pytest.fixture
@@ -45,53 +53,126 @@ def orchestrator(mock_graph: MagicMock) -> PipelineOrchestrator:
     )
 
 
+@pytest.fixture
+def orchestrator_pending(mock_graph_pending: MagicMock) -> PipelineOrchestrator:
+    return PipelineOrchestrator(
+        graph=mock_graph_pending,
+        query_store=InMemoryQueryStore(),
+    )
+
+
 @pytest.mark.asyncio
-async def test_submit_question(orchestrator: PipelineOrchestrator) -> None:
+async def test_submit_question_auto_executes(orchestrator: PipelineOrchestrator) -> None:
+    """Valid SQL should auto-execute and return EXECUTED status with results."""
     record = await orchestrator.submit_question("How many users?")
     assert record.natural_language == "How many users?"
     assert record.generated_sql == "SELECT count(*) AS total FROM users"
-    assert record.approval_status == ApprovalStatus.PENDING
-    assert record.validation_errors == []
+    assert record.approval_status == ApprovalStatus.EXECUTED
+    assert record.result == [{"total": 42}]
+    assert record.answer == "There are 42 users."
+    assert record.executed_at is not None
 
 
 @pytest.mark.asyncio
-async def test_execute_approved(orchestrator: PipelineOrchestrator) -> None:
-    record = await orchestrator.submit_question("How many users?")
-    await orchestrator.approval_manager.approve(record.id)
-    executed = await orchestrator.execute_approved(record.id)
+async def test_submit_question_with_validation_errors_pending(
+    orchestrator_pending: PipelineOrchestrator,
+) -> None:
+    """SQL with validation errors should pause and return PENDING status."""
+    record = await orchestrator_pending.submit_question("How many users?")
+    assert record.approval_status == ApprovalStatus.PENDING
+    assert record.result is None
+
+
+@pytest.mark.asyncio
+async def test_execute_approved(orchestrator_pending: PipelineOrchestrator) -> None:
+    record = await orchestrator_pending.submit_question("How many users?")
+    await orchestrator_pending.approval_manager.approve(record.id)
+
+    # After resume, mock graph returns completed state
+    completed_state = MagicMock()
+    completed_state.values = {
+        "messages": [],
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": [],
+        "result": [{"total": 42}],
+        "answer": "There are 42 users.",
+        "error": None,
+    }
+    completed_state.next = ()
+    orchestrator_pending._graph.aget_state = AsyncMock(return_value=completed_state)
+
+    executed = await orchestrator_pending.execute_approved(record.id)
     assert executed.approval_status == ApprovalStatus.EXECUTED
     assert executed.result == [{"total": 42}]
+    assert executed.answer == "There are 42 users."
 
 
 @pytest.mark.asyncio
-async def test_execute_unapproved_raises(orchestrator: PipelineOrchestrator) -> None:
-    record = await orchestrator.submit_question("How many users?")
+async def test_execute_unapproved_raises(orchestrator_pending: PipelineOrchestrator) -> None:
+    record = await orchestrator_pending.submit_question("How many users?")
     with pytest.raises(ValueError, match="must be approved"):
-        await orchestrator.execute_approved(record.id)
+        await orchestrator_pending.execute_approved(record.id)
 
 
 @pytest.mark.asyncio
-async def test_execute_failure_marks_failed(mock_graph: MagicMock) -> None:
-    # Configure graph to return an error on resume
-    call_count = 0
-    original_ainvoke = mock_graph.ainvoke
+async def test_auto_execute_failure_marks_failed() -> None:
+    """If auto-execute returns an error, status should be FAILED."""
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value=None)
+    mock_state = MagicMock()
+    mock_state.values = {
+        "messages": [],
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": [],
+        "result": None,
+        "answer": None,
+        "error": "DB error",
+    }
+    mock_state.next = ()
+    graph.aget_state = AsyncMock(return_value=mock_state)
 
-    async def side_effect(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            # First call: submit question (pauses at interrupt)
-            return await original_ainvoke(*args, **kwargs)
-        else:
-            # Second call: resume returns error
-            return {
-                "generated_sql": "SELECT count(*) AS total FROM users",
-                "error": "DB error",
-            }
-
-    mock_graph.ainvoke = AsyncMock(side_effect=side_effect)
     orchestrator = PipelineOrchestrator(
-        graph=mock_graph,
+        graph=graph,
+        query_store=InMemoryQueryStore(),
+    )
+    record = await orchestrator.submit_question("How many users?")
+    assert record.approval_status == ApprovalStatus.FAILED
+    assert record.error == "DB error"
+
+
+@pytest.mark.asyncio
+async def test_execute_failure_marks_failed() -> None:
+    """If execution after approval returns an error, status should be FAILED."""
+    # First call: pending (validation errors)
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value=None)
+
+    pending_state = MagicMock()
+    pending_state.values = {
+        "messages": [],
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": ["Unknown table"],
+        "result": None,
+        "answer": None,
+        "error": None,
+    }
+    pending_state.next = ("human_approval",)
+
+    failed_state = MagicMock()
+    failed_state.values = {
+        "messages": [],
+        "generated_sql": "SELECT count(*) AS total FROM users",
+        "validation_errors": [],
+        "result": None,
+        "answer": None,
+        "error": "DB error",
+    }
+    failed_state.next = ()
+
+    graph.aget_state = AsyncMock(side_effect=[pending_state, failed_state])
+
+    orchestrator = PipelineOrchestrator(
+        graph=graph,
         query_store=InMemoryQueryStore(),
     )
     record = await orchestrator.submit_question("How many users?")

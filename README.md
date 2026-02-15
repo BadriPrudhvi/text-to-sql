@@ -1,11 +1,11 @@
 # Text-to-SQL Pipeline
 
-A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGraph orchestration, human-in-the-loop approval, and both REST API and MCP tool interfaces.
+A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGraph orchestration, auto-execution of valid queries with human-in-the-loop approval for queries needing review, and both REST API and MCP tool interfaces.
 
 ## Features
 
 - **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains via LangChain
-- **LangGraph pipeline** — StateGraph orchestration with `interrupt()` for human-in-the-loop approval before any SQL execution
+- **LangGraph ReAct agent** — SQL agent with tool-calling loop that generates SQL, executes it, and synthesizes natural language answers. Uses `interrupt()` for human review when validation errors are found
 - **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
@@ -28,18 +28,23 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
                      PipelineOrchestrator
                                 │
                     ┌───────────▼───────────┐
-                    │   LangGraph Pipeline  │
-                    │                       │
-                    │  discover_schema      │
-                    │       ↓               │
-                    │  generate_sql         │
-                    │       ↓               │
-                    │  validate_sql         │
-                    │       ↓               │
-                    │  human_approval       │ ← interrupt() pauses here
-                    │       ↓               │
-                    │  execute_sql          │ ← runs only if approved
-                    └───────────────────────┘
+                    │  LangGraph ReAct Agent │
+                    │                        │
+                    │  discover_schema       │
+                    │       ↓                │
+                    │  generate_query ←──────│──┐ (ReAct loop)
+                    │       ↓                │  │
+                    │  [tool call?]──────────│──│──→ END (text answer)
+                    │       ↓                │  │
+                    │  check_query           │  │
+                    │       ↓                │  │
+                    │  [valid?]──────────────│──│──→ run_query ──┘
+                    │  [errors?]             │  │
+                    │       ↓                │  │
+                    │  human_approval        │  │ ← interrupt()
+                    │       ↓                │  │
+                    │  run_query ────────────│──┘
+                    └────────────────────────┘
 ```
 
 ## Quick Start
@@ -88,9 +93,11 @@ curl -X POST http://localhost:8000/api/query \
   -d '{"question": "What are the top 5 best-selling artists?"}'
 ```
 
-This returns a `query_id` and the generated SQL. The pipeline pauses for human approval.
+If the generated SQL is valid, it auto-executes and returns results immediately with `approval_status: "executed"`.
 
-**Step 2 — Approve the SQL:**
+If the SQL has validation errors, the response will have `approval_status: "pending"` — proceed to Step 2 to review and approve.
+
+**Step 2 — Approve (only if pending):**
 
 ```bash
 curl -X POST http://localhost:8000/api/approve/{query_id} \
@@ -98,7 +105,7 @@ curl -X POST http://localhost:8000/api/approve/{query_id} \
   -d '{"approved": true}'
 ```
 
-You can optionally modify the SQL before approving:
+You can optionally correct the SQL before approving:
 
 ```bash
 curl -X POST http://localhost:8000/api/approve/{query_id} \
@@ -114,11 +121,17 @@ curl http://localhost:8000/api/history
 
 ### Example Questions (Chinook DB)
 
-- "How many tracks are in each genre?"
-- "What are the top 5 customers by total spending?"
-- "List all albums by Led Zeppelin"
-- "Which employee has the most customers?"
-- "What is the average invoice total by country?"
+The pipeline handles queries from simple lookups to complex analytics:
+
+| Difficulty | Question | SQL Pattern |
+|-----------|----------|-------------|
+| Basic | "How many tracks are in the database?" | `SELECT COUNT(*) FROM Track` |
+| Filter | "List all tracks longer than 5 minutes" | `SELECT Name FROM Track WHERE Milliseconds > 300000` |
+| JOIN | "Show all albums by Led Zeppelin" | `SELECT al.Title FROM Artist ar JOIN Album al ON ar.ArtistId = al.ArtistId WHERE ar.Name = 'Led Zeppelin'` |
+| Aggregate | "Top 5 genres by number of tracks" | `SELECT g.Name, COUNT(*) FROM Genre g JOIN Track t ON g.GenreId = t.GenreId GROUP BY g.GenreId ORDER BY COUNT(*) DESC LIMIT 5` |
+| Multi-JOIN | "Top 5 genres by total sales revenue" | `SELECT g.Name, SUM(il.UnitPrice * il.Quantity) FROM Genre g JOIN Track t ON g.GenreId = t.GenreId JOIN InvoiceLine il ON t.TrackId = il.TrackId GROUP BY g.GenreId ORDER BY 2 DESC LIMIT 5` |
+| Subquery | "Customers who spent more than average" | `SELECT c.FirstName, c.LastName, SUM(i.Total) FROM Customer c JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY c.CustomerId HAVING SUM(i.Total) > (SELECT AVG(t) FROM (SELECT SUM(Total) t FROM Invoice GROUP BY CustomerId))` |
+| Window | "Rank employees by their customers' total purchases" | `SELECT e.FirstName, e.LastName, SUM(i.Total), RANK() OVER (ORDER BY SUM(i.Total) DESC) FROM Employee e JOIN Customer c ON e.EmployeeId = c.SupportRepId JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY e.EmployeeId` |
 
 ## Configuration
 
@@ -161,7 +174,7 @@ Configure any combination. The fallback chain is built from all providers with v
 
 ### `POST /api/query`
 
-Submit a natural language question. Returns generated SQL pending approval.
+Submit a natural language question. Valid queries auto-execute and return results immediately. Queries with validation errors pause for human review.
 
 **Request:**
 ```json
@@ -170,15 +183,33 @@ Submit a natural language question. Returns generated SQL pending approval.
 }
 ```
 
-**Response:**
+**Response (auto-executed):**
 ```json
 {
   "query_id": "abc-123",
   "question": "How many users signed up last month?",
   "generated_sql": "SELECT count(*) FROM users WHERE created_at >= '2026-01-01'",
   "validation_errors": [],
+  "approval_status": "executed",
+  "message": "Query executed successfully.",
+  "result": [{"count": 42}],
+  "answer": "There were 42 users who signed up last month.",
+  "error": null
+}
+```
+
+**Response (pending approval):**
+```json
+{
+  "query_id": "abc-456",
+  "question": "How many items in stock?",
+  "generated_sql": "SELECT count(*) FROM nonexistent_table",
+  "validation_errors": ["no such table: nonexistent_table"],
   "approval_status": "pending",
-  "message": "SQL generated. Awaiting approval."
+  "message": "SQL generated. Awaiting approval.",
+  "result": null,
+  "answer": null,
+  "error": null
 }
 ```
 
@@ -200,6 +231,7 @@ Approve or reject a pending query. Approved queries are executed immediately.
   "query_id": "abc-123",
   "approval_status": "executed",
   "result": [{"count": 42}],
+  "answer": "There are 42 items.",
   "error": null
 }
 ```
@@ -222,13 +254,11 @@ Get paginated query history.
 
 ## MCP Tools
 
-Four MCP tools are available at `/mcp` via SSE transport:
+Two MCP tools are available at `/mcp` via Streamable HTTP transport:
 
 | Tool | Description |
 |------|-------------|
-| `schema_discovery` | Discover database schema (tables, columns, types). Supports `force_refresh`. |
-| `generate_sql` | Generate SQL from a natural language question. Returns pending SQL for approval. |
-| `validate_sql` | Validate a SQL query against the database without executing it. |
+| `generate_sql` | Generate SQL from a natural language question. Valid queries auto-execute and return results. Queries with validation errors return pending status for approval. |
 | `execute_sql` | Execute a previously approved SQL query by `query_id`. |
 
 ## Database Setup
@@ -292,18 +322,18 @@ src/text_to_sql/
 │   ├── postgres.py       # PostgreSQL backend
 │   └── sqlite.py         # SQLite backend
 ├── llm/                  # LLM integration
-│   ├── prompts.py        # LangChain ChatPromptTemplate for SQL generation
-│   ├── router.py         # Multi-provider model creation with fallbacks
-│   └── sql_generator.py  # SQL generation chain (prompt | model)
+│   ├── prompts.py        # SQL agent system prompt for ReAct loop
+│   └── router.py         # Multi-provider model creation with fallbacks
 ├── mcp/                  # MCP tool server
-│   └── tools.py          # 4 MCP tools via FastMCP
+│   └── tools.py          # 2 MCP tools via FastMCP
 ├── models/               # Pydantic models
 │   ├── domain.py         # QueryRecord, TableInfo, SchemaInfo, etc.
 │   ├── requests.py       # API request models
 │   └── responses.py      # API response models
 ├── pipeline/             # LangGraph orchestration
 │   ├── approval.py       # ApprovalManager state machine
-│   ├── graph.py          # LangGraph StateGraph with interrupt()
+│   ├── graph.py          # LangGraph ReAct agent with interrupt()
+│   ├── tools.py          # run_query LangChain tool
 │   └── orchestrator.py   # Thin wrapper around the graph
 ├── schema/               # Schema discovery
 │   ├── cache.py          # TTL-based schema cache

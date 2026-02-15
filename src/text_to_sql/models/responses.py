@@ -7,19 +7,34 @@ from pydantic import BaseModel, Field
 from text_to_sql.models.domain import ApprovalStatus
 
 
+def status_message(status: ApprovalStatus) -> str:
+    """Human-readable message for a given approval status."""
+    if status == ApprovalStatus.EXECUTED:
+        return "Query executed successfully."
+    if status == ApprovalStatus.FAILED:
+        return "Query execution failed."
+    if status == ApprovalStatus.REJECTED:
+        return "Query rejected by user."
+    return "SQL generated. Awaiting approval."
+
+
 class QueryResponse(BaseModel):
     query_id: str
     question: str
     generated_sql: str
     validation_errors: list[str] = Field(default_factory=list)
     approval_status: ApprovalStatus
-    message: str = "SQL generated. Awaiting approval."
+    message: str = ""
+    result: list[dict[str, Any]] | None = None
+    answer: str | None = None
+    error: str | None = None
 
 
 class ApprovalResponse(BaseModel):
     query_id: str
     approval_status: ApprovalStatus
     result: list[dict[str, Any]] | None = None
+    answer: str | None = None
     error: str | None = None
 
 

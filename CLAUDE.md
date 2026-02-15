@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A text-to-SQL pipeline that converts natural language questions into SQL queries with human-in-the-loop approval. Built with FastAPI, LangChain 1.2+, and LangGraph 1.0+ with dual interfaces (REST API + MCP tools). Requires Python 3.13+.
+A text-to-SQL pipeline that converts natural language questions into SQL queries. Valid queries auto-execute; queries with validation errors pause for human-in-the-loop review. Built with FastAPI, LangChain 1.2+, and LangGraph 1.0+ with dual interfaces (REST API + MCP tools). Requires Python 3.13+.
 
 ## Commands
 
@@ -31,18 +31,30 @@ uv run mypy .
 
 ## Architecture
 
-### Pipeline Flow (LangGraph StateGraph)
+### Pipeline Flow (LangGraph ReAct Agent)
 ```
-START → discover_schema → generate_sql → validate_sql → human_approval (INTERRUPT) → execute_sql → END
+START → discover_schema → generate_query ←─────────────────────┐
+                              ↓                                 │
+                       [should_continue]                        │
+                        /           \                           │
+                  (tool calls)    (text answer)                 │
+                       ↓              ↓                         │
+                  check_query        END                        │
+                       ↓                                        │
+                 [route_after_check]                            │
+                  /           \                                 │
+            (clean)        (errors)                             │
+                ↓              ↓                                │
+            run_query    human_approval → run_query ────────────┘
 ```
-The `human_approval` node uses LangGraph's `interrupt()` to pause execution. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`.
+Uses `SQLAgentState(MessagesState)` — a hybrid of LangGraph's MessagesState with custom fields (`generated_sql`, `validation_errors`, `result`, `answer`, `error`). The LLM is bound with a `run_query` tool. After `run_query`, the loop returns to `generate_query` where the model sees results in message history and generates a natural language answer (no tool calls → routes to END). Queries with validation errors route to `human_approval` which uses LangGraph's `interrupt()` to pause for human review. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`. Read-only enforcement is handled by the database backends (`check_read_only()` in `db/*.py`) as defense-in-depth.
 
 ### Source Layout (`src/text_to_sql/`)
 - **api/**: FastAPI REST endpoints — `POST /api/query`, `POST /api/approve/{id}`, `GET /api/history`
-- **pipeline/**: LangGraph orchestration — `graph.py` (StateGraph with 5 nodes), `orchestrator.py` (coordinator), `approval.py` (HITL manager with SQL re-validation)
-- **llm/**: LangChain provider integration via `init_chat_model()` — fallback chain: Anthropic → Google → OpenAI
+- **pipeline/**: LangGraph orchestration — `graph.py` (StateGraph with 5 nodes, ReAct loop), `tools.py` (run_query LangChain tool), `orchestrator.py` (coordinator), `approval.py` (HITL manager with SQL re-validation)
+- **llm/**: LangChain provider integration via `init_chat_model()` — fallback chain: Anthropic → Google → OpenAI. `prompts.py` has the SQL agent system prompt.
 - **db/**: Database backends via protocol pattern — BigQuery, PostgreSQL, SQLite. All async via SQLAlchemy
-- **mcp/**: FastMCP tool server at `/mcp` (Streamable HTTP via `http_app()`) — 4 tools: schema_discovery, generate_sql, validate_sql, execute_sql
+- **mcp/**: FastMCP tool server at `/mcp` (Streamable HTTP via `http_app()`) — 2 tools: generate_sql, execute_sql
 - **schema/**: Schema discovery with TTL-based in-memory caching, formats as DDL for LLM context
 - **store/**: Query record storage via protocol — in-memory with asyncio.Lock
 - **models/**: Pydantic v2 domain models, request/response schemas with input constraints
@@ -64,7 +76,7 @@ The `human_approval` node uses LangGraph's `interrupt()` to pause execution. Res
 - **Strict typing**: mypy strict mode, Pydantic v2 models everywhere
 
 ### Test Setup
-- `conftest.py` auto-sets SQLite env, provides `mock_chat_model` (FakeListChatModel), creates test app with lifespan
+- `conftest.py` auto-sets SQLite env, provides `mock_chat_model` (FakeToolChatModel with tool call + answer responses), creates test app with lifespan
 - All LLM calls are mocked in tests — never hits real providers
 - Integration tests seed an in-memory SQLite with a sample `users` table
 

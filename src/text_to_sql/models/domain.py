@@ -52,6 +52,7 @@ class QueryRecord(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     result: list[dict[str, Any]] | None = None
+    answer: str | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     approved_at: datetime | None = None
