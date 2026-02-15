@@ -9,42 +9,66 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
 - **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
-- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, injected into LLM prompts as DDL context
+- **Schema-aware generation** — Automatic schema discovery with TTL-based caching, injected into LLM prompts as DDL context with few-shot examples for improved accuracy
 - **Query history** — In-memory store tracking all queries with status (pending, approved, rejected, executed, failed)
 
 ## Architecture
 
 ```
-                         ┌───────────────┐
-                         │   User / IDE  │
-                         └──────┬────────┘
-                                │
-                  ┌─────────────┴─────────────┐
-                  │                             │
-           REST API (/api)               MCP Tools (/mcp)
-                  │                             │
-                  └─────────────┬───────────────┘
-                                │
-                     PipelineOrchestrator
-                                │
-                    ┌───────────▼───────────┐
-                    │  LangGraph ReAct Agent │
-                    │                        │
-                    │  discover_schema       │
-                    │       ↓                │
-                    │  generate_query ←──────│──┐ (ReAct loop)
-                    │       ↓                │  │
-                    │  [tool call?]──────────│──│──→ END (text answer)
-                    │       ↓                │  │
-                    │  check_query           │  │
-                    │       ↓                │  │
-                    │  [valid?]──────────────│──│──→ run_query ──┘
-                    │  [errors?]             │  │
-                    │       ↓                │  │
-                    │  human_approval        │  │ ← interrupt()
-                    │       ↓                │  │
-                    │  run_query ────────────│──┘
-                    └────────────────────────┘
+                    ┌──────────────┐
+                    │  User / IDE  │
+                    └──────┬───────┘
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+      REST API (/api)             MCP Tools (/mcp)
+             │                           │
+             └─────────────┬─────────────┘
+                           │
+                PipelineOrchestrator
+                           │
+                           ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │                  LangGraph ReAct Agent                  │
+  │                                                         │
+  │   ┌──────────────────┐                                  │
+  │   │ discover_schema  │  Fetch DDL + inject system prompt│
+  │   └────────┬─────────┘  with few-shot examples          │
+  │            ▼                                             │
+  │   ┌──────────────────┐◄──────────────────────────┐      │
+  │   │ generate_query   │  LLM invocation (ReAct)   │      │
+  │   └────────┬─────────┘                           │      │
+  │            │                                     │      │
+  │      [should_continue]                           │      │
+  │       ╱            ╲                             │      │
+  │  tool call      text answer                      │      │
+  │      │              │                            │      │
+  │      ▼             END                           │      │
+  │   ┌──────────────────┐                           │      │
+  │   │  check_query     │  Validate SQL             │      │
+  │   └────────┬─────────┘                           │      │
+  │            │                                     │      │
+  │     [route_after_check]                          │      │
+  │       ╱            ╲                             │      │
+  │    clean         errors                          │      │
+  │      │              │                            │      │
+  │      │              ▼                            │      │
+  │      │     ┌──────────────────┐                  │      │
+  │      │     │ human_approval   │  interrupt()     │      │
+  │      │     └────────┬─────────┘                  │      │
+  │      │              │                            │      │
+  │      │     [route_after_approval]                │      │
+  │      │       ╱            ╲                      │      │
+  │      │   approved       rejected                 │      │
+  │      │      │              │                     │      │
+  │      ▼      ▼             END                    │      │
+  │   ┌──────────────────┐                           │      │
+  │   │   run_query      │  Execute SQL via backend  │      │
+  │   └────────┬─────────┘                           │      │
+  │            │                                     │      │
+  │            └─────────────────────────────────────┘      │
+  │                      (loop back)                        │
+  └─────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
