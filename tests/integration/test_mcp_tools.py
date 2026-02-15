@@ -17,6 +17,7 @@ from text_to_sql.pipeline.graph import compile_pipeline
 from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
 from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.store.memory import InMemoryQueryStore
+from text_to_sql.store.session import InMemorySessionStore
 
 _SIMPLE = {"QueryClassification": QueryClassification(query_type="simple", reasoning="test")}
 
@@ -45,7 +46,12 @@ async def _make_mcp_server(responses: list[AIMessage]):
         chat_model=chat_model,
         checkpointer=MemorySaver(),
     )
-    orchestrator = PipelineOrchestrator(graph=graph, query_store=InMemoryQueryStore())
+    session_store = InMemorySessionStore()
+    orchestrator = PipelineOrchestrator(
+        graph=graph,
+        query_store=InMemoryQueryStore(),
+        session_store=session_store,
+    )
 
     server = create_mcp_server()
     server.state = SimpleNamespace(orchestrator=orchestrator)
@@ -72,9 +78,15 @@ async def mcp_client(mcp_server):
 
 @pytest.mark.asyncio
 async def test_mcp_server_registers_all_tools(mcp_server) -> None:
-    """MCP server should register exactly 2 tools with correct names."""
+    """MCP server should register all 5 tools with correct names."""
     tools = await mcp_server.get_tools()
-    assert set(tools.keys()) == {"generate_sql", "execute_sql"}
+    assert set(tools.keys()) == {
+        "generate_sql",
+        "execute_sql",
+        "create_session",
+        "query_in_session",
+        "get_session_history",
+    }
 
 
 # --- generate_sql tool ---
@@ -152,6 +164,104 @@ async def test_execute_sql_rejects_unapproved_query(pending_mcp_client) -> None:
 
     with pytest.raises(Exception, match="must be approved"):
         await pending_mcp_client.call_tool("execute_sql", {"query_id": query_id})
+
+
+@pytest.mark.asyncio
+async def test_execute_sql_includes_analytical_fields(pending_mcp_server, pending_mcp_client) -> None:
+    """execute_sql response should include query_type, analysis_plan, analysis_steps."""
+    gen = await pending_mcp_client.call_tool(
+        "generate_sql", {"question": "How many items?"}
+    )
+    query_id = gen.structured_content["query_id"]
+
+    await pending_mcp_server.state.orchestrator.approval_manager.approve(
+        query_id, modified_sql="SELECT count(*) FROM users"
+    )
+
+    result = await pending_mcp_client.call_tool("execute_sql", {"query_id": query_id})
+    data = result.structured_content
+    assert "query_type" in data
+    assert "analysis_plan" in data
+    assert "analysis_steps" in data
+
+
+# --- Session tools ---
+
+
+@pytest.mark.asyncio
+async def test_create_session(mcp_client) -> None:
+    """create_session should return a session_id."""
+    result = await mcp_client.call_tool("create_session", {})
+    data = result.structured_content
+    assert "session_id" in data
+    assert isinstance(data["session_id"], str)
+    assert len(data["session_id"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_query_in_session(mcp_client) -> None:
+    """query_in_session should execute a query within a session and return all fields."""
+    session = await mcp_client.call_tool("create_session", {})
+    session_id = session.structured_content["session_id"]
+
+    result = await mcp_client.call_tool(
+        "query_in_session",
+        {"question": "How many users are there?", "session_id": session_id},
+    )
+    data = result.structured_content
+    assert "query_id" in data
+    assert "generated_sql" in data
+    assert data["approval_status"] == "executed"
+    assert data["result"] is not None
+    assert data["answer"] is not None
+    assert "query_type" in data
+    assert "analysis_plan" in data
+    assert "analysis_steps" in data
+
+
+@pytest.mark.asyncio
+async def test_query_in_session_not_found(mcp_client) -> None:
+    """query_in_session with invalid session_id should return an error."""
+    result = await mcp_client.call_tool(
+        "query_in_session",
+        {"question": "How many users?", "session_id": "nonexistent-id"},
+    )
+    data = result.structured_content
+    assert "error" in data
+    assert "not found" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_get_session_history(mcp_client) -> None:
+    """get_session_history should return queries made in the session."""
+    session = await mcp_client.call_tool("create_session", {})
+    session_id = session.structured_content["session_id"]
+
+    await mcp_client.call_tool(
+        "query_in_session",
+        {"question": "How many users are there?", "session_id": session_id},
+    )
+
+    result = await mcp_client.call_tool(
+        "get_session_history", {"session_id": session_id}
+    )
+    data = result.structured_content
+    assert data["session_id"] == session_id
+    assert data["total"] == 1
+    assert len(data["queries"]) == 1
+    assert "query_id" in data["queries"][0]
+    assert data["queries"][0]["approval_status"] == "executed"
+
+
+@pytest.mark.asyncio
+async def test_get_session_history_not_found(mcp_client) -> None:
+    """get_session_history with invalid session_id should return an error."""
+    result = await mcp_client.call_tool(
+        "get_session_history", {"session_id": "nonexistent-id"}
+    )
+    data = result.structured_content
+    assert "error" in data
+    assert "not found" in data["error"]
 
 
 # --- MCP HTTP endpoint ---
