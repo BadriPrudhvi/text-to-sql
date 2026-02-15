@@ -36,10 +36,7 @@ def build_pipeline_graph(
     schema_cache: SchemaCache,
     chat_model: BaseChatModel,
 ) -> StateGraph:
-    """Build the LangGraph StateGraph for text-to-SQL pipeline.
-
-    Flow: discover_schema → generate_sql → validate_sql → human_approval → execute_sql
-    """
+    """Build the LangGraph StateGraph for text-to-SQL pipeline."""
     schema_service = SchemaDiscoveryService(db_backend, schema_cache)
     sql_generator = SQLGenerator(chat_model)
 
@@ -94,7 +91,12 @@ def build_pipeline_graph(
             return {"result": result}
         except Exception as e:
             logger.error("graph_sql_execution_failed", error=str(e))
-            return {"error": str(e)}
+            return {"error": "Query execution failed."}
+
+    def route_after_validation(state: PipelineState) -> str:
+        if state.get("validation_errors"):
+            return "human_approval"
+        return "execute_sql"
 
     def route_after_approval(state: PipelineState) -> str:
         if state.get("approved"):
@@ -112,7 +114,7 @@ def build_pipeline_graph(
     builder.add_edge(START, "discover_schema")
     builder.add_edge("discover_schema", "generate_sql")
     builder.add_edge("generate_sql", "validate_sql")
-    builder.add_edge("validate_sql", "human_approval")
+    builder.add_conditional_edges("validate_sql", route_after_validation, ["execute_sql", "human_approval"])
     builder.add_conditional_edges("human_approval", route_after_approval, ["execute_sql", END])
     builder.add_edge("execute_sql", END)
 

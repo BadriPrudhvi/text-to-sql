@@ -1,10 +1,277 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+from asgi_lifespan import LifespanManager
+from fastmcp import Client
+from httpx import ASGITransport, AsyncClient
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langgraph.checkpoint.memory import MemorySaver
+
+from text_to_sql.db.factory import create_database_backend
 from text_to_sql.mcp.tools import create_mcp_server
+from text_to_sql.pipeline.graph import compile_pipeline
+from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
+from text_to_sql.schema.cache import SchemaCache
+from text_to_sql.store.memory import InMemoryQueryStore
 
 
-def test_mcp_server_creates_tools() -> None:
-    """Verify the MCP server registers all expected tools."""
-    mcp = create_mcp_server()
-    # The FastMCP server should have our 4 tools registered
-    assert mcp is not None
+async def _make_mcp_server(llm_responses: list[str]):
+    """Create a FastMCP server wired to a FakeListChatModel with the given responses."""
+    from text_to_sql.config import Settings
+
+    settings = Settings(_env_file=None)
+    db_backend = await create_database_backend(settings)
+
+    from sqlalchemy import text
+
+    async with db_backend._engine.begin() as conn:
+        await conn.execute(
+            text("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
+        )
+        await conn.execute(text("INSERT INTO users (id, name) VALUES (1, 'Alice')"))
+        await conn.execute(text("INSERT INTO users (id, name) VALUES (2, 'Bob')"))
+
+    schema_cache = SchemaCache(ttl_seconds=3600)
+    chat_model = FakeListChatModel(responses=llm_responses)
+    graph = compile_pipeline(
+        db_backend=db_backend,
+        schema_cache=schema_cache,
+        chat_model=chat_model,
+        checkpointer=MemorySaver(),
+    )
+    orchestrator = PipelineOrchestrator(graph=graph, query_store=InMemoryQueryStore())
+
+    server = create_mcp_server()
+    server.state = SimpleNamespace(
+        db_backend=db_backend,
+        schema_cache=schema_cache,
+        orchestrator=orchestrator,
+    )
+    return server, db_backend
+
+
+@pytest.fixture
+async def mcp_server():
+    server, db_backend = await _make_mcp_server(
+        ["SELECT count(*) AS total FROM users"] * 20,
+    )
+    yield server
+    await db_backend.close()
+
+
+@pytest.fixture
+async def mcp_client(mcp_server):
+    async with Client(mcp_server) as client:
+        yield client
+
+
+# --- Tool Registration ---
+
+
+@pytest.mark.asyncio
+async def test_mcp_server_registers_all_tools(mcp_server) -> None:
+    """MCP server should register exactly 4 tools with correct names."""
+    tools = await mcp_server.get_tools()
+    assert set(tools.keys()) == {"schema_discovery", "generate_sql", "validate_sql", "execute_sql"}
+
+
+# --- schema_discovery tool ---
+
+
+@pytest.mark.asyncio
+async def test_schema_discovery_returns_tables(mcp_client) -> None:
+    """schema_discovery should return the test database schema with users table."""
+    result = await mcp_client.call_tool("schema_discovery", {"force_refresh": False})
+    data = result.structured_content
+    assert "tables" in data
+    table_names = [t["table_name"] for t in data["tables"]]
+    assert "users" in table_names
+
+
+@pytest.mark.asyncio
+async def test_schema_discovery_returns_columns(mcp_client) -> None:
+    """schema_discovery should return column info for tables."""
+    result = await mcp_client.call_tool("schema_discovery", {"force_refresh": False})
+    data = result.structured_content
+    users_table = [t for t in data["tables"] if t["table_name"] == "users"][0]
+    column_names = [c["name"] for c in users_table["columns"]]
+    assert "id" in column_names
+    assert "name" in column_names
+
+
+@pytest.mark.asyncio
+async def test_schema_discovery_force_refresh(mcp_client) -> None:
+    """schema_discovery with force_refresh should bypass cache and return valid schema."""
+    await mcp_client.call_tool("schema_discovery", {"force_refresh": False})
+    result = await mcp_client.call_tool("schema_discovery", {"force_refresh": True})
+    data = result.structured_content
+    assert "tables" in data
+    assert len(data["tables"]) > 0
+
+
+# --- generate_sql tool ---
+
+
+@pytest.mark.asyncio
+async def test_generate_sql_auto_executes_safe_query(mcp_client) -> None:
+    """generate_sql with safe SELECT should auto-execute and return results."""
+    result = await mcp_client.call_tool(
+        "generate_sql", {"question": "How many users are there?"}
+    )
+    data = result.structured_content
+    assert "query_id" in data
+    assert "generated_sql" in data
+    assert data["approval_status"] == "executed"
+    assert data["result"] is not None
+    assert data["message"] == "Query executed successfully."
+
+
+@pytest.mark.asyncio
+async def test_generate_sql_returns_unique_ids(mcp_client) -> None:
+    """Each generate_sql call should return a unique query_id."""
+    r1 = await mcp_client.call_tool("generate_sql", {"question": "How many users?"})
+    r2 = await mcp_client.call_tool("generate_sql", {"question": "List all users"})
+    assert r1.structured_content["query_id"] != r2.structured_content["query_id"]
+
+
+# --- validate_sql tool ---
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_accepts_select(mcp_client) -> None:
+    """validate_sql should accept a valid SELECT query."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "SELECT count(*) FROM users"}
+    )
+    data = result.structured_content
+    assert data["is_valid"] is True
+    assert data["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_accepts_with_cte(mcp_client) -> None:
+    """validate_sql should accept a WITH (CTE) query."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "WITH u AS (SELECT * FROM users) SELECT * FROM u"}
+    )
+    assert result.structured_content["is_valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_rejects_delete(mcp_client) -> None:
+    """validate_sql should reject a DELETE statement."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "DELETE FROM users"}
+    )
+    data = result.structured_content
+    assert data["is_valid"] is False
+    assert len(data["errors"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_rejects_drop(mcp_client) -> None:
+    """validate_sql should reject a DROP TABLE statement."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "DROP TABLE users"}
+    )
+    assert result.structured_content["is_valid"] is False
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_rejects_insert(mcp_client) -> None:
+    """validate_sql should reject an INSERT statement."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "INSERT INTO users (id, name) VALUES (3, 'Eve')"}
+    )
+    assert result.structured_content["is_valid"] is False
+
+
+@pytest.mark.asyncio
+async def test_validate_sql_rejects_update(mcp_client) -> None:
+    """validate_sql should reject an UPDATE statement."""
+    result = await mcp_client.call_tool(
+        "validate_sql", {"sql": "UPDATE users SET name = 'Mallory' WHERE id = 1"}
+    )
+    assert result.structured_content["is_valid"] is False
+
+
+# --- execute_sql tool (requires validation errors to get PENDING status) ---
+
+
+@pytest.fixture
+async def pending_mcp_server():
+    """MCP server where LLM returns SQL referencing a nonexistent table (triggers validation errors)."""
+    server, db_backend = await _make_mcp_server(
+        ["SELECT count(*) FROM nonexistent_table"] * 20,
+    )
+    yield server
+    await db_backend.close()
+
+
+@pytest.fixture
+async def pending_mcp_client(pending_mcp_server):
+    async with Client(pending_mcp_server) as client:
+        yield client
+
+
+@pytest.mark.asyncio
+async def test_execute_sql_runs_approved_query(pending_mcp_server, pending_mcp_client) -> None:
+    """execute_sql should execute after approving with corrected SQL."""
+    gen = await pending_mcp_client.call_tool(
+        "generate_sql", {"question": "How many items?"}
+    )
+    query_id = gen.structured_content["query_id"]
+    assert gen.structured_content["approval_status"] == "pending"
+
+    await pending_mcp_server.state.orchestrator.approval_manager.approve(
+        query_id, modified_sql="SELECT count(*) FROM users"
+    )
+
+    result = await pending_mcp_client.call_tool("execute_sql", {"query_id": query_id})
+    data = result.structured_content
+    assert data["query_id"] == query_id
+    assert data["status"] == "executed"
+
+
+@pytest.mark.asyncio
+async def test_execute_sql_rejects_unapproved_query(pending_mcp_client) -> None:
+    """execute_sql should fail for a query that hasn't been approved."""
+    gen = await pending_mcp_client.call_tool(
+        "generate_sql", {"question": "How many items?"}
+    )
+    query_id = gen.structured_content["query_id"]
+    assert gen.structured_content["approval_status"] == "pending"
+
+    with pytest.raises(Exception, match="must be approved"):
+        await pending_mcp_client.call_tool("execute_sql", {"query_id": query_id})
+
+
+# --- MCP HTTP endpoint ---
+
+
+@pytest.mark.asyncio
+async def test_mcp_endpoint_responds(app) -> None:
+    """The /mcp endpoint should accept POST requests (Streamable HTTP)."""
+    transport = ASGITransport(app=app)
+    async with LifespanManager(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as http:
+            response = await http.post(
+                "/mcp/",
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "initialize",
+                    "id": 1,
+                    "params": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test", "version": "0.1.0"},
+                    },
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            assert response.status_code == 200

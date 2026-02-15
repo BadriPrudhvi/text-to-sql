@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from text_to_sql.models.responses import status_message
 from text_to_sql.schema.discovery import SchemaDiscoveryService
 
 
@@ -22,7 +23,10 @@ def create_mcp_server() -> FastMCP:
 
     @mcp.tool()
     async def generate_sql(question: str) -> dict:
-        """Generate SQL from a natural language question. Requires human approval before execution.
+        """Generate SQL from a natural language question.
+
+        Valid queries are auto-executed and results returned immediately.
+        Queries with validation errors pause for human review and correction.
 
         Args:
             question: The natural language question to convert to SQL.
@@ -34,7 +38,9 @@ def create_mcp_server() -> FastMCP:
             "generated_sql": record.generated_sql,
             "validation_errors": record.validation_errors,
             "approval_status": record.approval_status.value,
-            "message": "SQL generated. Human approval required before execution.",
+            "message": status_message(record.approval_status),
+            "result": record.result,
+            "error": record.error,
         }
 
     @mcp.tool()

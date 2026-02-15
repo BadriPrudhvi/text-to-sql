@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A text-to-SQL pipeline that converts natural language questions into SQL queries with human-in-the-loop approval. Built with FastAPI, LangChain 1.2+, and LangGraph 1.0+ with dual interfaces (REST API + MCP tools). Requires Python 3.13+.
+A text-to-SQL pipeline that converts natural language questions into SQL queries. Valid queries auto-execute; queries with validation errors pause for human-in-the-loop review. Built with FastAPI, LangChain 1.2+, and LangGraph 1.0+ with dual interfaces (REST API + MCP tools). Requires Python 3.13+.
 
 ## Commands
 
@@ -33,9 +33,10 @@ uv run mypy .
 
 ### Pipeline Flow (LangGraph StateGraph)
 ```
-START → discover_schema → generate_sql → validate_sql → human_approval (INTERRUPT) → execute_sql → END
+START → discover_schema → generate_sql → validate_sql → [valid?] → execute_sql → END
+                                                        → [errors?] → human_approval (INTERRUPT) → execute_sql → END
 ```
-The `human_approval` node uses LangGraph's `interrupt()` to pause execution. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`.
+After `validate_sql`, queries with no validation errors auto-execute immediately. Queries with validation errors route to `human_approval` which uses LangGraph's `interrupt()` to pause for human review and SQL correction. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`. Read-only enforcement is handled by the database backends (`check_read_only()` in `db/*.py`) as defense-in-depth.
 
 ### Source Layout (`src/text_to_sql/`)
 - **api/**: FastAPI REST endpoints — `POST /api/query`, `POST /api/approve/{id}`, `GET /api/history`

@@ -52,36 +52,54 @@ def compiled_graph(mock_backend, fake_chat_model):
 
 
 @pytest.mark.asyncio
-async def test_graph_pauses_at_interrupt(compiled_graph) -> None:
-    """Graph should pause at human_approval interrupt and return partial state."""
-    config = {"configurable": {"thread_id": "test-1"}}
+async def test_safe_sql_auto_executes(compiled_graph) -> None:
+    """Safe read-only SELECT should skip interrupt and auto-execute."""
+    config = {"configurable": {"thread_id": "test-safe-1"}}
 
-    await compiled_graph.ainvoke(
+    result = await compiled_graph.ainvoke(
         {"question": "How many users?"},
         config=config,
     )
 
-    # After interrupt, the graph returns the state up to the interrupt point
     state = await compiled_graph.aget_state(config)
-    assert state.values.get("generated_sql") == "SELECT count(*) AS total FROM users"
-    assert state.values.get("dialect") == "sqlite"
-    # Graph should be waiting at an interrupt (next node is not None)
-    assert state.next is not None
+    assert not state.next  # empty tuple = completed
+    assert result.get("result") == [{"total": 42}]
+    assert result.get("generated_sql") == "SELECT count(*) AS total FROM users"
 
 
 @pytest.mark.asyncio
-async def test_graph_resume_approved(compiled_graph) -> None:
-    """Resuming with approved=True should execute the query."""
-    config = {"configurable": {"thread_id": "test-2"}}
-
-    # Phase 1: submit
-    await compiled_graph.ainvoke(
-        {"question": "How many users?"},
-        config=config,
+async def test_validation_errors_route_to_approval(mock_backend, fake_chat_model) -> None:
+    """SQL with validation errors should pause at human_approval interrupt."""
+    mock_backend.validate_sql = AsyncMock(return_value=["Unknown table 'foo'"])
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=fake_chat_model,
+        checkpointer=MemorySaver(),
     )
+    config = {"configurable": {"thread_id": "test-val-err-1"}}
 
-    # Phase 2: resume with approval
-    result = await compiled_graph.ainvoke(
+    await graph.ainvoke({"question": "How many foos?"}, config=config)
+
+    state = await graph.aget_state(config)
+    assert state.next  # paused at interrupt
+
+
+@pytest.mark.asyncio
+async def test_graph_resume_approved(mock_backend, fake_chat_model) -> None:
+    """Resuming with approved=True should execute the query."""
+    mock_backend.validate_sql = AsyncMock(return_value=["some error"])
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=fake_chat_model,
+        checkpointer=MemorySaver(),
+    )
+    config = {"configurable": {"thread_id": "test-resume-1"}}
+
+    await graph.ainvoke({"question": "How many users?"}, config=config)
+
+    result = await graph.ainvoke(
         Command(resume={"approved": True}),
         config=config,
     )
@@ -90,37 +108,42 @@ async def test_graph_resume_approved(compiled_graph) -> None:
 
 
 @pytest.mark.asyncio
-async def test_graph_resume_rejected(compiled_graph) -> None:
+async def test_graph_resume_rejected(mock_backend, fake_chat_model) -> None:
     """Resuming with approved=False should end without executing."""
-    config = {"configurable": {"thread_id": "test-3"}}
-
-    # Phase 1: submit
-    await compiled_graph.ainvoke(
-        {"question": "How many users?"},
-        config=config,
+    mock_backend.validate_sql = AsyncMock(return_value=["some error"])
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=fake_chat_model,
+        checkpointer=MemorySaver(),
     )
+    config = {"configurable": {"thread_id": "test-resume-2"}}
 
-    # Phase 2: resume with rejection
-    result = await compiled_graph.ainvoke(
+    await graph.ainvoke({"question": "How many users?"}, config=config)
+
+    result = await graph.ainvoke(
         Command(resume={"approved": False}),
         config=config,
     )
 
-    # Result should not be populated
     assert result.get("result") is None
 
 
 @pytest.mark.asyncio
-async def test_graph_resume_with_modified_sql(compiled_graph) -> None:
+async def test_graph_resume_with_modified_sql(mock_backend, fake_chat_model) -> None:
     """Resuming with modified SQL should use the new SQL."""
-    config = {"configurable": {"thread_id": "test-4"}}
-
-    await compiled_graph.ainvoke(
-        {"question": "How many users?"},
-        config=config,
+    mock_backend.validate_sql = AsyncMock(return_value=["some error"])
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=fake_chat_model,
+        checkpointer=MemorySaver(),
     )
+    config = {"configurable": {"thread_id": "test-resume-3"}}
 
-    result = await compiled_graph.ainvoke(
+    await graph.ainvoke({"question": "How many users?"}, config=config)
+
+    result = await graph.ainvoke(
         Command(resume={"approved": True, "modified_sql": "SELECT 1"}),
         config=config,
     )

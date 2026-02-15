@@ -1,11 +1,11 @@
 # Text-to-SQL Pipeline
 
-A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGraph orchestration, human-in-the-loop approval, and both REST API and MCP tool interfaces.
+A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGraph orchestration, auto-execution of valid queries with human-in-the-loop approval for queries needing review, and both REST API and MCP tool interfaces.
 
 ## Features
 
 - **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains via LangChain
-- **LangGraph pipeline** — StateGraph orchestration with `interrupt()` for human-in-the-loop approval before any SQL execution
+- **LangGraph pipeline** — StateGraph orchestration that auto-executes valid queries and uses `interrupt()` for human review only when validation errors are found
 - **Multi-database support** — BigQuery, PostgreSQL, and SQLite backends
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
@@ -36,9 +36,12 @@ A production-ready text-to-SQL pipeline with multi-provider LLM support, LangGra
                     │       ↓               │
                     │  validate_sql         │
                     │       ↓               │
+                    │  [valid?]─────────────│──→ execute_sql (auto)
+                    │  [errors?]            │
+                    │       ↓               │
                     │  human_approval       │ ← interrupt() pauses here
                     │       ↓               │
-                    │  execute_sql          │ ← runs only if approved
+                    │  execute_sql          │ ← runs after approval
                     └───────────────────────┘
 ```
 
@@ -88,9 +91,11 @@ curl -X POST http://localhost:8000/api/query \
   -d '{"question": "What are the top 5 best-selling artists?"}'
 ```
 
-This returns a `query_id` and the generated SQL. The pipeline pauses for human approval.
+If the generated SQL is valid, it auto-executes and returns results immediately with `approval_status: "executed"`.
 
-**Step 2 — Approve the SQL:**
+If the SQL has validation errors, the response will have `approval_status: "pending"` — proceed to Step 2 to review and approve.
+
+**Step 2 — Approve (only if pending):**
 
 ```bash
 curl -X POST http://localhost:8000/api/approve/{query_id} \
@@ -98,7 +103,7 @@ curl -X POST http://localhost:8000/api/approve/{query_id} \
   -d '{"approved": true}'
 ```
 
-You can optionally modify the SQL before approving:
+You can optionally correct the SQL before approving:
 
 ```bash
 curl -X POST http://localhost:8000/api/approve/{query_id} \
@@ -161,7 +166,7 @@ Configure any combination. The fallback chain is built from all providers with v
 
 ### `POST /api/query`
 
-Submit a natural language question. Returns generated SQL pending approval.
+Submit a natural language question. Valid queries auto-execute and return results immediately. Queries with validation errors pause for human review.
 
 **Request:**
 ```json
@@ -170,15 +175,31 @@ Submit a natural language question. Returns generated SQL pending approval.
 }
 ```
 
-**Response:**
+**Response (auto-executed):**
 ```json
 {
   "query_id": "abc-123",
   "question": "How many users signed up last month?",
   "generated_sql": "SELECT count(*) FROM users WHERE created_at >= '2026-01-01'",
   "validation_errors": [],
+  "approval_status": "executed",
+  "message": "Query executed successfully.",
+  "result": [{"count": 42}],
+  "error": null
+}
+```
+
+**Response (pending approval):**
+```json
+{
+  "query_id": "abc-456",
+  "question": "How many items in stock?",
+  "generated_sql": "SELECT count(*) FROM nonexistent_table",
+  "validation_errors": ["no such table: nonexistent_table"],
   "approval_status": "pending",
-  "message": "SQL generated. Awaiting approval."
+  "message": "SQL generated. Awaiting approval.",
+  "result": null,
+  "error": null
 }
 ```
 
@@ -222,12 +243,12 @@ Get paginated query history.
 
 ## MCP Tools
 
-Four MCP tools are available at `/mcp` via SSE transport:
+Four MCP tools are available at `/mcp` via Streamable HTTP transport:
 
 | Tool | Description |
 |------|-------------|
 | `schema_discovery` | Discover database schema (tables, columns, types). Supports `force_refresh`. |
-| `generate_sql` | Generate SQL from a natural language question. Returns pending SQL for approval. |
+| `generate_sql` | Generate SQL from a natural language question. Valid queries auto-execute and return results. Queries with validation errors return pending status for approval. |
 | `validate_sql` | Validate a SQL query against the database without executing it. |
 | `execute_sql` | Execute a previously approved SQL query by `query_id`. |
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import MemorySaver
@@ -51,14 +51,23 @@ def create_app() -> FastAPI:
 
         await db_backend.close()
 
+    mcp_http_app = mcp_server.http_app(path="/")
+
+    @asynccontextmanager
+    async def combined_lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(lifespan(app))
+            await stack.enter_async_context(mcp_http_app.lifespan(mcp_http_app))
+            yield
+
     app = FastAPI(
         title="Text-to-SQL Pipeline",
         version="0.1.0",
         description="Multi-provider text-to-SQL with LangGraph orchestration and human-in-the-loop approval",
-        lifespan=lifespan,
+        lifespan=combined_lifespan,
     )
     app.include_router(api_router, prefix="/api")
-    app.mount("/mcp", mcp_server.http_app())
+    app.mount("/mcp", mcp_http_app)
 
     return app
 

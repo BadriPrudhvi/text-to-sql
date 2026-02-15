@@ -30,7 +30,7 @@ class PipelineOrchestrator:
         return self._approval_manager
 
     async def submit_question(self, question: str) -> QueryRecord:
-        """Phase 1: Run the LangGraph pipeline until it hits the human_approval interrupt."""
+        """Run the LangGraph pipeline. Safe read-only queries auto-execute; unsafe ones pause for approval."""
         record = QueryRecord(
             natural_language=question,
             database_type="",
@@ -38,14 +38,11 @@ class PipelineOrchestrator:
 
         config = {"configurable": {"thread_id": record.id}}
 
-        # Invoke the graph — it will run discover_schema → generate_sql → validate_sql
-        # then pause at human_approval via interrupt()
         await self._graph.ainvoke(
             {"question": question},
             config=config,
         )
 
-        # Read the state after the interrupt
         state = await self._graph.aget_state(config)
         graph_state = state.values
 
@@ -53,14 +50,26 @@ class PipelineOrchestrator:
         record.generated_sql = graph_state.get("generated_sql", "")
         record.validation_errors = graph_state.get("validation_errors", [])
 
-        record = await self._approval_manager.submit_for_approval(record)
+        if not state.next:
+            # Graph ran to completion — query was auto-executed
+            if graph_state.get("error"):
+                record.error = graph_state["error"]
+                record.approval_status = ApprovalStatus.FAILED
+            else:
+                record.result = graph_state.get("result")
+                record.approval_status = ApprovalStatus.EXECUTED
+                record.executed_at = datetime.now(timezone.utc)
+            await self._store.save(record)
+        else:
+            # Graph paused at human_approval interrupt
+            record = await self._approval_manager.submit_for_approval(record)
 
         logger.info(
             "question_submitted",
             query_id=record.id,
             question=question,
             sql=record.generated_sql,
-            validation_errors=record.validation_errors,
+            status=record.approval_status.value,
         )
         return record
 

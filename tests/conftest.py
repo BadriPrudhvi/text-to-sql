@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
@@ -40,10 +41,8 @@ async def app(mock_chat_model: FakeListChatModel):
 async def client(app) -> AsyncClient:
     """Create an async HTTP client for testing."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        # Trigger lifespan startup
-        async with app.router.lifespan_context(app):
-            # Create a test table so SQL execution works
+    async with LifespanManager(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
             from sqlalchemy import text
 
             db = app.state.db_backend
