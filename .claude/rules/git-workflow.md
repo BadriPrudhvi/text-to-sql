@@ -1,10 +1,19 @@
 # Git Workflow
 
 ## Branch Strategy
-- `main` — stable, production-ready code
+- `main` — stable, production-ready code. All changes merge here via PR.
+- Never commit directly to `main` — always use a feature branch + PR.
 - Feature branches: `feat/<description>` (e.g., `feat/add-postgres-backend`)
 - Bug fixes: `fix/<description>` (e.g., `fix/sql-injection-guard`)
 - Chores: `chore/<description>` (e.g., `chore/update-deps`)
+
+## Workflow
+1. Create a branch from `main`: `git checkout -b feat/<description>`
+2. Make changes, commit with conventional commit messages
+3. Push branch: `git push -u origin feat/<description>`
+4. Create a PR to `main`: `gh pr create --base main`
+5. Review the PR (code review, tests, lint)
+6. Merge to `main` and delete the feature branch
 
 ## Commit Messages
 Use conventional commits:
@@ -32,9 +41,11 @@ uv run ruff check .           # No lint errors
 
 ## Pull Request Rules
 - PR title follows conventional commit format
+- All PRs target `main`
 - All tests must pass
 - No security regressions (SQL injection, unvalidated input, etc.)
 - One logical change per PR — don't mix features with refactors
+- Delete feature branch after merge
 
 ## What NOT to Commit
 - `.env` files or API keys
