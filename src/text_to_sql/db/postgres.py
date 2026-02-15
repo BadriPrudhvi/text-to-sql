@@ -32,16 +32,23 @@ class PostgresBackend:
 
         query = text("""
             SELECT
-                table_schema,
-                table_name,
-                table_type,
-                column_name,
-                data_type,
-                is_nullable
+                t.table_schema,
+                t.table_name,
+                t.table_type,
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                col_description(cls.oid, c.ordinal_position) AS column_description,
+                obj_description(cls.oid) AS table_description
             FROM information_schema.columns c
             JOIN information_schema.tables t USING (table_schema, table_name)
-            WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-            ORDER BY table_schema, table_name, ordinal_position
+            LEFT JOIN pg_catalog.pg_class cls
+                ON cls.relname = t.table_name
+                AND cls.relnamespace = (
+                    SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = t.table_schema
+                )
+            WHERE t.table_schema NOT IN ('information_schema', 'pg_catalog')
+            ORDER BY t.table_schema, t.table_name, c.ordinal_position
         """)
 
         async with self._engine.connect() as conn:
@@ -56,6 +63,7 @@ class PostgresBackend:
                     schema_name=row["table_schema"],
                     table_name=row["table_name"],
                     table_type=row["table_type"],
+                    description=row.get("table_description") or "",
                     columns=[],
                 )
             cols = list(tables_map[key].columns)
@@ -64,6 +72,7 @@ class PostgresBackend:
                     name=row["column_name"],
                     data_type=row["data_type"],
                     is_nullable=row["is_nullable"] == "YES",
+                    description=row.get("column_description") or "",
                 )
             )
             tables_map[key] = tables_map[key].model_copy(update={"columns": cols})

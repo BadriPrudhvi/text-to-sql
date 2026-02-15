@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -15,8 +17,9 @@ logger = structlog.get_logger()
 class SqliteBackend:
     """SQLite database backend using SQLAlchemy async + aiosqlite."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, metadata_path: str = "") -> None:
         self._url = url
+        self._metadata_path = metadata_path
         self._engine: AsyncEngine | None = None
 
     async def connect(self) -> None:
@@ -68,7 +71,37 @@ class SqliteBackend:
                 )
 
         logger.info("sqlite_schema_discovered", table_count=len(tables))
-        return tables
+        return self._merge_metadata(tables)
+
+    def _merge_metadata(self, tables: list[TableInfo]) -> list[TableInfo]:
+        """Merge descriptions from optional JSON metadata file."""
+        if not self._metadata_path:
+            return tables
+
+        path = Path(self._metadata_path)
+        if not path.exists():
+            logger.warning("sqlite_metadata_file_not_found", path=str(path))
+            return tables
+
+        metadata: dict[str, Any] = json.loads(path.read_text())
+        merged: list[TableInfo] = []
+        for table in tables:
+            table_meta = metadata.get(table.table_name, {})
+            table_desc = table_meta.get("description", "")
+            col_descs: dict[str, str] = table_meta.get("columns", {})
+
+            columns = [
+                col.model_copy(update={"description": col_descs.get(col.name, "")})
+                if col.name in col_descs
+                else col
+                for col in table.columns
+            ]
+            merged.append(
+                table.model_copy(update={"description": table_desc, "columns": columns})
+                if table_desc or col_descs
+                else table
+            )
+        return merged
 
     async def validate_sql(self, sql: str) -> list[str]:
         assert self._engine is not None

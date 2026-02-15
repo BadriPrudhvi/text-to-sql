@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     # Schema Cache
     schema_cache_ttl_seconds: int = 3600
 
+    # SQLite metadata
+    sqlite_metadata_path: str = ""
+
+    # Schema filtering
+    schema_include_tables: list[str] = []
+    schema_exclude_tables: list[str] = []
+
+    # Context window management
+    context_max_tokens: int = 16000
+    context_schema_budget_pct: float = 0.6
+    context_history_max_messages: int = 10
+
+    # Dynamic schema selection
+    schema_selection_mode: str = "none"  # "none" | "keyword" | "llm"
+    schema_max_selected_tables: int = 15
+
     # App
     app_host: str = "0.0.0.0"
     app_port: int = 8000

@@ -35,6 +35,13 @@ def create_app() -> FastAPI:
             schema_cache=schema_cache,
             chat_model=chat_model,
             checkpointer=MemorySaver(),
+            include_tables=settings.schema_include_tables or None,
+            exclude_tables=settings.schema_exclude_tables or None,
+            context_max_tokens=settings.context_max_tokens,
+            context_schema_budget_pct=settings.context_schema_budget_pct,
+            context_history_max_messages=settings.context_history_max_messages,
+            schema_selection_mode=settings.schema_selection_mode,
+            schema_max_selected_tables=settings.schema_max_selected_tables,
         )
 
         orchestrator = PipelineOrchestrator(graph=graph, query_store=query_store)

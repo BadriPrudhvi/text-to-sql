@@ -36,6 +36,7 @@ class TableInfo(BaseModel):
     schema_name: str = ""
     table_name: str
     table_type: str = "TABLE"
+    description: str = ""
     columns: list[ColumnInfo] = Field(default_factory=list)
 
 

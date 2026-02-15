@@ -20,7 +20,10 @@ async def create_database_backend(settings: Settings) -> DatabaseBackend:
         case DatabaseType.POSTGRES:
             backend = PostgresBackend(url=settings.postgres_url)
         case DatabaseType.SQLITE:
-            backend = SqliteBackend(url=settings.sqlite_url)
+            backend = SqliteBackend(
+                url=settings.sqlite_url,
+                metadata_path=settings.sqlite_metadata_path,
+            )
 
     await backend.connect()
     return backend
