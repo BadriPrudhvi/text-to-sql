@@ -20,7 +20,13 @@ uv run mypy .                                    # Type check
 
 ### Pipeline Flow
 
-LangGraph ReAct agent with 6 nodes: `discover_schema → generate_query → check_query → run_query → validate_result → generate_query` (loop). State: `SQLAgentState(MessagesState)` with fields `generated_sql`, `validation_errors`, `result`, `answer`, `error`, `correction_attempts`. After execution, `validate_result` checks result quality and feeds warnings back for self-correction (up to `max_correction_attempts`). Text answer (no tool calls) routes to END. Validation errors route to `human_approval` using `interrupt()`. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`. All nodes emit SSE events via `get_stream_writer()`.
+LangGraph pipeline with **query classification** branching into simple or analytical paths. State: `SQLAgentState(MessagesState)` with fields `generated_sql`, `validation_errors`, `result`, `answer`, `error`, `correction_attempts`, `query_type`, `analysis_plan`, `plan_results`, `current_step`, `synthesis_attempts`.
+
+**Simple path** (6 nodes): `discover_schema → classify_query → generate_query → check_query → run_query → validate_result → generate_query` (ReAct loop). Text answer routes to END. Validation errors route to `human_approval` using `interrupt()`. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`.
+
+**Analytical path** (5 new agent nodes): `discover_schema → classify_query → plan_analysis → execute_plan_step (loop) → synthesize_analysis → validate_analysis → END`. The classifier uses LLM structured output to route queries. The planner creates multi-step analysis plans (max `analytical_max_plan_steps`). The executor generates SQL per step, validates, and executes (failures recorded but don't block). The analyst synthesizes all results into actionable insights. The validator runs deterministic quality checks and optionally triggers re-synthesis.
+
+All nodes emit SSE events via `get_stream_writer()`. Self-correction up to `max_correction_attempts` on simple path.
 
 ### Multi-Turn & Streaming
 
@@ -47,6 +53,7 @@ Sessions (`POST /api/conversations`) share LangGraph checkpoint state via sessio
 |-----------|---------|
 | `api/` | FastAPI endpoints — query, approve, history, conversations, cache, health |
 | `pipeline/` | LangGraph graph, orchestrator, approval manager, result validators |
+| `pipeline/agents/` | Multi-agent nodes: classifier, planner, executor, analyst, analysis validator |
 | `llm/` | LLM provider fallback chain (Anthropic → Google → OpenAI), prompts, retry logic |
 | `db/` | Database backends (BigQuery, PostgreSQL, SQLite) via `DatabaseBackend` protocol |
 | `mcp/` | FastMCP server at `/mcp` — 2 tools: `generate_sql`, `execute_sql` |

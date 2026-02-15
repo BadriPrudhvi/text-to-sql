@@ -12,10 +12,13 @@ from langgraph.checkpoint.memory import MemorySaver
 from tests.conftest import FakeToolChatModel, make_agent_responses
 from text_to_sql.db.factory import create_database_backend
 from text_to_sql.mcp.tools import create_mcp_server
+from text_to_sql.pipeline.agents.models import QueryClassification
 from text_to_sql.pipeline.graph import compile_pipeline
 from text_to_sql.pipeline.orchestrator import PipelineOrchestrator
 from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.store.memory import InMemoryQueryStore
+
+_SIMPLE = {"QueryClassification": QueryClassification(query_type="simple", reasoning="test")}
 
 
 async def _make_mcp_server(responses: list[AIMessage]):
@@ -35,7 +38,7 @@ async def _make_mcp_server(responses: list[AIMessage]):
         await conn.execute(text("INSERT INTO users (id, name) VALUES (2, 'Bob')"))
 
     schema_cache = SchemaCache(ttl_seconds=3600)
-    chat_model = FakeToolChatModel(messages=iter(responses))
+    chat_model = FakeToolChatModel(messages=iter(responses), structured_responses=_SIMPLE)
     graph = compile_pipeline(
         db_backend=db_backend,
         schema_cache=schema_cache,

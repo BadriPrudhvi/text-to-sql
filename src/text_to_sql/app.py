@@ -92,6 +92,8 @@ def create_app() -> FastAPI:
             llm_retry_min_wait=settings.llm_retry_min_wait_seconds,
             llm_retry_max_wait=settings.llm_retry_max_wait_seconds,
             db_query_timeout_seconds=settings.db_query_timeout_seconds,
+            analytical_max_plan_steps=settings.analytical_max_plan_steps,
+            analytical_max_synthesis_attempts=settings.analytical_max_synthesis_attempts,
         )
 
         orchestrator = PipelineOrchestrator(

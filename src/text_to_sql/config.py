@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # Self-correction
     max_correction_attempts: int = 2
 
+    # Analytical query support
+    analytical_max_plan_steps: int = 7
+    analytical_max_synthesis_attempts: int = 1
+
     # Reliability
     db_query_timeout_seconds: int = 30
     llm_retry_attempts: int = 3
