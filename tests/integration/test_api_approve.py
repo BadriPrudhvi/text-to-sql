@@ -5,7 +5,8 @@ from unittest.mock import patch
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+from tests.conftest import FakeToolChatModel, make_agent_responses
 
 
 @pytest.fixture
@@ -14,9 +15,10 @@ async def pending_client():
 
     This triggers validation errors, which routes to human_approval (PENDING).
     """
-    bad_sql_model = FakeListChatModel(
-        responses=["SELECT count(*) FROM nonexistent_table"] * 20,
+    bad_sql_model = FakeToolChatModel(
+        messages=iter(make_agent_responses("SELECT count(*) FROM nonexistent_table", "There is 1 user.")),
     )
+
     with patch("text_to_sql.app.create_chat_model", return_value=bad_sql_model):
         from text_to_sql.app import create_app
 
@@ -53,6 +55,7 @@ async def test_approve_with_modified_sql(pending_client: AsyncClient) -> None:
     data = approve.json()
     assert data["approval_status"] == "executed"
     assert data["result"] is not None
+    assert data["answer"] is not None
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ async def test_submit_query_auto_executes(client: AsyncClient) -> None:
     assert data["generated_sql"]
     assert data["approval_status"] == "executed"
     assert data["result"] is not None
+    assert data["answer"] is not None
     assert data["message"] == "Query executed successfully."
     assert "query_id" in data
 
