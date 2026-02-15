@@ -8,6 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import interrupt
 
@@ -28,6 +29,7 @@ class SQLAgentState(MessagesState):
     result: list[dict[str, Any]] | None = None
     answer: str | None = None
     error: str | None = None
+    correction_attempts: int = 0
 
 
 def build_pipeline_graph(
@@ -41,8 +43,15 @@ def build_pipeline_graph(
     context_history_max_messages: int = 10,
     schema_selection_mode: str = "none",
     schema_max_selected_tables: int = 15,
+    max_correction_attempts: int = 2,
+    llm_retry_attempts: int = 3,
+    llm_retry_min_wait: int = 2,
+    llm_retry_max_wait: int = 10,
+    db_query_timeout_seconds: float | None = None,
 ) -> StateGraph:
     """Build the LangGraph StateGraph for text-to-SQL agent pipeline."""
+    from text_to_sql.llm.retry import create_invoke_with_retry
+
     schema_service = SchemaDiscoveryService(
         db_backend, schema_cache,
         include_tables=include_tables,
@@ -51,11 +60,18 @@ def build_pipeline_graph(
     schema_budget = int(context_max_tokens * context_schema_budget_pct)
     run_query_tool = create_run_query_tool(db_backend)
     model_with_tools = chat_model.bind_tools([run_query_tool])
+    invoke_with_retry = create_invoke_with_retry(
+        max_attempts=llm_retry_attempts,
+        min_wait=llm_retry_min_wait,
+        max_wait=llm_retry_max_wait,
+    )
 
     async def discover_schema(state: SQLAgentState) -> dict:
         """Discover database schema and inject as system message."""
         from text_to_sql.schema.selector import TableSelector
 
+        writer = get_stream_writer()
+        writer({"event": "schema_discovery_started"})
         schema = await schema_service.get_schema()
 
         # Phase 3: Dynamic schema selection
@@ -86,6 +102,7 @@ def build_pipeline_graph(
         context = schema_service.schema_to_prompt_context_budgeted(schema, schema_budget)
         dialect = db_backend.backend_type
         logger.info("graph_schema_discovered", table_count=len(schema.tables))
+        writer({"event": "schema_discovered", "table_count": len(schema.tables)})
 
         system_msg = SystemMessage(
             content=SQL_AGENT_SYSTEM_PROMPT.format(
@@ -99,12 +116,14 @@ def build_pipeline_graph(
 
     async def generate_query(state: SQLAgentState) -> dict:
         """Invoke the LLM with tools. It either makes a tool call (SQL) or returns text (answer)."""
+        writer = get_stream_writer()
+        writer({"event": "llm_generation_started"})
         messages = state["messages"]
         # Phase 2D: Truncate history to keep context manageable
         if len(messages) > context_history_max_messages + 1:
             # Keep system message (index 0) + last N messages
             messages = [messages[0]] + messages[-(context_history_max_messages):]
-        response = await model_with_tools.ainvoke(messages)
+        response = await invoke_with_retry(model_with_tools, messages)
 
         updates: dict[str, Any] = {"messages": [response]}
 
@@ -112,18 +131,24 @@ def build_pipeline_graph(
             sql = response.tool_calls[0]["args"].get("query", "")
             updates["generated_sql"] = sql
             logger.info("graph_sql_generated", sql=sql)
+            writer({"event": "sql_generated", "sql": sql})
         elif isinstance(response, AIMessage) and response.content:
             updates["answer"] = str(response.content)
             logger.info("graph_answer_generated", answer=updates["answer"][:100])
+            writer({"event": "answer_generated", "answer": updates["answer"]})
 
         return updates
 
     async def check_query(state: SQLAgentState) -> dict:
         """Validate the SQL from the last tool call."""
+        writer = get_stream_writer()
         sql = state.get("generated_sql", "")
         errors = await db_backend.validate_sql(sql)
         if errors:
             logger.warning("graph_sql_validation_errors", errors=errors)
+            writer({"event": "validation_failed", "errors": errors})
+        else:
+            writer({"event": "validation_passed"})
         return {"validation_errors": errors}
 
     async def human_approval(state: SQLAgentState) -> dict:
@@ -147,7 +172,9 @@ def build_pipeline_graph(
 
     async def run_query(state: SQLAgentState) -> dict:
         """Execute the SQL directly via db_backend and append a ToolMessage for the ReAct loop."""
+        writer = get_stream_writer()
         sql = state.get("generated_sql", "")
+        writer({"event": "query_execution_started", "sql": sql})
 
         # Find the tool_call_id from the last AIMessage to create a proper ToolMessage
         tool_call_id = "unknown"
@@ -157,15 +184,60 @@ def build_pipeline_graph(
                 break
 
         try:
-            result = await db_backend.execute_sql(sql)
+            result = await db_backend.execute_sql(sql, timeout_seconds=db_query_timeout_seconds)
             result_json = json.dumps(result, default=str)
             logger.info("graph_sql_executed", row_count=len(result))
+            writer({"event": "query_executed", "row_count": len(result)})
             tool_msg = ToolMessage(content=result_json, tool_call_id=tool_call_id)
             return {"messages": [tool_msg], "result": result}
         except Exception as e:
             logger.error("graph_sql_execution_failed", error=str(e))
+            writer({"event": "query_execution_failed", "error": str(e)})
             error_msg = ToolMessage(content=f"Error: {e}", tool_call_id=tool_call_id)
             return {"messages": [error_msg], "error": "Query execution failed."}
+
+    async def validate_result(state: SQLAgentState) -> dict:
+        """Validate query results and feed warnings back to LLM for self-correction."""
+        from text_to_sql.pipeline.validators import ResultValidator
+
+        writer = get_stream_writer()
+
+        if state.get("correction_attempts", 0) >= max_correction_attempts:
+            return {}
+
+        validator = ResultValidator()
+        user_question = ""
+        for msg in reversed(state["messages"]):
+            if hasattr(msg, "content") and not isinstance(msg, (AIMessage, SystemMessage, ToolMessage)):
+                user_question = str(msg.content)
+                break
+
+        warnings = validator.validate(
+            state.get("generated_sql") or "",
+            state.get("result"),
+            user_question,
+        )
+        if not warnings:
+            return {}
+
+        logger.info("graph_result_validation_warnings", warnings=warnings)
+        writer({"event": "self_correction_triggered", "warnings": warnings})
+
+        # Find the last tool_call_id for a proper ToolMessage
+        tool_call_id = "unknown"
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                tool_call_id = msg.tool_calls[0]["id"]
+                break
+
+        tool_msg = ToolMessage(
+            content=f"Warning: {'; '.join(warnings)}. Please revise the query.",
+            tool_call_id=tool_call_id,
+        )
+        return {
+            "messages": [tool_msg],
+            "correction_attempts": state.get("correction_attempts", 0) + 1,
+        }
 
     def should_continue(state: SQLAgentState) -> str:
         """Route after generate_query: tool calls -> check_query, text -> END."""
@@ -191,13 +263,15 @@ def build_pipeline_graph(
     builder.add_node("check_query", check_query)
     builder.add_node("human_approval", human_approval)
     builder.add_node("run_query", run_query)
+    builder.add_node("validate_result", validate_result)
 
     builder.add_edge(START, "discover_schema")
     builder.add_edge("discover_schema", "generate_query")
     builder.add_conditional_edges("generate_query", should_continue, ["check_query", END])
     builder.add_conditional_edges("check_query", route_after_check, ["run_query", "human_approval"])
     builder.add_conditional_edges("human_approval", route_after_approval, ["run_query", END])
-    builder.add_edge("run_query", "generate_query")  # ReAct loop
+    builder.add_edge("run_query", "validate_result")
+    builder.add_edge("validate_result", "generate_query")  # ReAct loop with validation
 
     return builder
 
@@ -214,6 +288,11 @@ def compile_pipeline(
     context_history_max_messages: int = 10,
     schema_selection_mode: str = "none",
     schema_max_selected_tables: int = 15,
+    max_correction_attempts: int = 2,
+    llm_retry_attempts: int = 3,
+    llm_retry_min_wait: int = 2,
+    llm_retry_max_wait: int = 10,
+    db_query_timeout_seconds: float | None = None,
 ):
     """Build and compile the pipeline graph with optional checkpointer."""
     builder = build_pipeline_graph(
@@ -225,6 +304,11 @@ def compile_pipeline(
         context_history_max_messages=context_history_max_messages,
         schema_selection_mode=schema_selection_mode,
         schema_max_selected_tables=schema_max_selected_tables,
+        max_correction_attempts=max_correction_attempts,
+        llm_retry_attempts=llm_retry_attempts,
+        llm_retry_min_wait=llm_retry_min_wait,
+        llm_retry_max_wait=llm_retry_max_wait,
+        db_query_timeout_seconds=db_query_timeout_seconds,
     )
     if checkpointer is None:
         checkpointer = MemorySaver()

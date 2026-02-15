@@ -45,8 +45,16 @@ class SchemaInfo(BaseModel):
     discovered_at: datetime = Field(default_factory=_utcnow)
 
 
+class SessionInfo(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=_utcnow)
+    last_activity: datetime = Field(default_factory=_utcnow)
+    query_ids: list[str] = Field(default_factory=list)
+
+
 class QueryRecord(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str | None = None
     natural_language: str
     database_type: str
     generated_sql: str = ""

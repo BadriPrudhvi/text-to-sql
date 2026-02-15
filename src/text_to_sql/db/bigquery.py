@@ -122,13 +122,20 @@ class BigQueryBackend:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _dry_run)
 
-    async def execute_sql(self, sql: str) -> list[dict[str, Any]]:
+    async def execute_sql(
+        self, sql: str, timeout_seconds: float | None = None
+    ) -> list[dict[str, Any]]:
         errors = check_read_only(sql)
         if errors:
             raise ValueError(errors[0])
 
         def _execute() -> list[dict[str, Any]]:
-            result = self._client.query(sql)
+            from google.cloud.bigquery import QueryJobConfig
+
+            job_config = QueryJobConfig()
+            if timeout_seconds:
+                job_config.job_timeout_ms = int(timeout_seconds * 1000)
+            result = self._client.query(sql, job_config=job_config)
             return [dict(row) for row in result]
 
         loop = asyncio.get_running_loop()

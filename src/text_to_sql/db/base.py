@@ -19,7 +19,9 @@ class DatabaseBackend(Protocol):
         """Validate SQL syntax. Returns list of error strings (empty = valid)."""
         ...
 
-    async def execute_sql(self, sql: str) -> list[dict[str, Any]]:
+    async def execute_sql(
+        self, sql: str, timeout_seconds: float | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a read-only SQL query and return rows as dicts."""
         ...
 

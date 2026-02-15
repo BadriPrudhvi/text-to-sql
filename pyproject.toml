@@ -28,6 +28,9 @@ dependencies = [
     "python-dotenv>=1.2.0",
     "structlog>=25.5.0",
     "rich>=14.0.0",
+    "sse-starlette>=3.2.0",
+    "langgraph-checkpoint-sqlite>=3.0.3",
+    "tenacity>=9.1.4",
 ]
 
 [dependency-groups]
