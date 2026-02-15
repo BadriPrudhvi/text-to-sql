@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from text_to_sql.db.base import check_read_only
+from text_to_sql.db.base import check_read_only, clean_llm_sql
 from text_to_sql.db.sqlite import SqliteBackend
 
 
@@ -35,6 +35,38 @@ class TestCheckReadOnly:
         errors = check_read_only("")
         assert len(errors) == 1
         assert "Empty" in errors[0]
+
+
+class TestCleanLlmSql:
+    """Tests for clean_llm_sql utility."""
+
+    def test_clean_sql_passes_through(self) -> None:
+        sql = "SELECT * FROM users WHERE id = 1"
+        assert clean_llm_sql(sql) == sql
+
+    def test_strips_trailing_explanation_after_semicolon(self) -> None:
+        raw = "SELECT * FROM users;\nThis query retrieves all users from the table."
+        assert clean_llm_sql(raw) == "SELECT * FROM users"
+
+    def test_strips_trailing_explanation_after_blank_line(self) -> None:
+        raw = "SELECT * FROM users\n\nThis query retrieves all users from the table."
+        assert clean_llm_sql(raw) == "SELECT * FROM users"
+
+    def test_strips_markdown_code_fences(self) -> None:
+        raw = "```sql\nSELECT * FROM users;\n```"
+        assert clean_llm_sql(raw) == "SELECT * FROM users"
+
+    def test_strips_markdown_fences_with_explanation(self) -> None:
+        raw = "```sql\nSELECT * FROM users;\n```\nThis returns all users."
+        assert clean_llm_sql(raw) == "SELECT * FROM users"
+
+    def test_no_semicolon_no_blank_line_passes_through(self) -> None:
+        sql = "SELECT count(*) FROM orders"
+        assert clean_llm_sql(sql) == sql
+
+    def test_multiline_sql_with_semicolon(self) -> None:
+        raw = "SELECT\n  id,\n  name\nFROM users\nWHERE active = 1;"
+        assert clean_llm_sql(raw) == "SELECT\n  id,\n  name\nFROM users\nWHERE active = 1"
 
 
 class TestSqliteValidateSql:
