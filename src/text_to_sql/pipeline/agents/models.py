@@ -18,6 +18,12 @@ class QueryClassification(BaseModel):
     )
 
 
+class StepSQLResult(BaseModel):
+    """Structured SQL output from the executor LLM."""
+
+    sql: str = Field(description="A single SQL SELECT query. No explanation or commentary.")
+
+
 class AnalysisStep(BaseModel):
     """A single step in a multi-step analysis plan."""
 

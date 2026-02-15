@@ -11,7 +11,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
 
-from text_to_sql.db.base import DatabaseBackend
+from text_to_sql.db.base import DatabaseBackend, clean_llm_sql
+from text_to_sql.pipeline.agents.models import StepSQLResult
 from text_to_sql.pipeline.agents.prompts import STEP_SQL_PROMPT
 
 logger = structlog.get_logger()
@@ -81,17 +82,25 @@ def create_execute_plan_step_node(
                 schema_context=schema_context,
                 previous_results_context=previous_results_context,
             )
-            response = await invoke_with_retry(
-                chat_model, [HumanMessage(content=prompt)]
-            )
-            sql = str(response.content).strip()
-            # Strip markdown code fences if present
-            if sql.startswith("```"):
-                lines = sql.split("\n")
-                sql = "\n".join(
-                    line for line in lines
-                    if not line.startswith("```")
-                ).strip()
+            messages = [HumanMessage(content=prompt)]
+
+            # Layer 1: Try structured output (primary defense)
+            try:
+                structured_model = chat_model.with_structured_output(StepSQLResult)
+                result = await invoke_with_retry(structured_model, messages)
+                if isinstance(result, StepSQLResult):
+                    sql = result.sql.strip()
+                else:
+                    # Structured output returned unexpected type — fall back
+                    sql = str(result.content).strip() if hasattr(result, "content") else str(result).strip()
+            except Exception:
+                # Layer 2: Fall back to raw text
+                logger.debug("structured_output_fallback", step_index=current_step)
+                response = await invoke_with_retry(chat_model, messages)
+                sql = str(response.content).strip()
+
+            # Defense in depth: clean any residual LLM explanation text
+            sql = clean_llm_sql(sql)
 
             step_result["sql"] = sql
             writer({

@@ -66,6 +66,23 @@ def check_read_only(sql: str) -> list[str]:
     return []
 
 
+def clean_llm_sql(sql: str) -> str:
+    """Strip trailing explanatory text that LLMs sometimes append after SQL."""
+    # Strip markdown code fences
+    if sql.startswith("```"):
+        lines = sql.split("\n")
+        sql = "\n".join(line for line in lines if not line.startswith("```")).strip()
+    # If semicolon present, take everything up to the last one
+    last_semi = sql.rfind(";")
+    if last_semi != -1:
+        return sql[: last_semi].strip()
+    # No semicolon — split on blank line (LLMs put blank line before explanation)
+    parts = sql.split("\n\n")
+    if len(parts) > 1:
+        return parts[0].strip()
+    return sql.strip()
+
+
 _SAFE_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
