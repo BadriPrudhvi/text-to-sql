@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Text-to-SQL pipeline: natural language → SQL → results. Valid queries auto-execute; queries with validation errors pause for human review. Built with FastAPI, LangChain, LangGraph. Python 3.13+.
+Text-to-SQL pipeline: natural language → SQL → results. Multi-turn conversations, SSE streaming, self-correction, query caching, human-in-the-loop approval. Built with FastAPI, LangChain, LangGraph. Python 3.13+.
 
 ## Commands
 
@@ -20,26 +20,40 @@ uv run mypy .                                    # Type check
 
 ### Pipeline Flow
 
-LangGraph ReAct agent with 5 nodes: `discover_schema → generate_query → check_query → run_query → generate_query` (loop). State: `SQLAgentState(MessagesState)` with fields `generated_sql`, `validation_errors`, `result`, `answer`, `error`. LLM is bound with `run_query` tool. After execution, loop returns to `generate_query` — text answer (no tool calls) routes to END. Validation errors route to `human_approval` using `interrupt()`. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`.
+LangGraph ReAct agent with 6 nodes: `discover_schema → generate_query → check_query → run_query → validate_result → generate_query` (loop). State: `SQLAgentState(MessagesState)` with fields `generated_sql`, `validation_errors`, `result`, `answer`, `error`, `correction_attempts`. After execution, `validate_result` checks result quality and feeds warnings back for self-correction (up to `max_correction_attempts`). Text answer (no tool calls) routes to END. Validation errors route to `human_approval` using `interrupt()`. Resume with `Command(resume={"approved": True, "modified_sql": "..."})`. All nodes emit SSE events via `get_stream_writer()`.
+
+### Multi-Turn & Streaming
+
+Sessions (`POST /api/conversations`) share LangGraph checkpoint state via session_id = thread_id, enabling follow-up questions. SSE streaming via `sse-starlette` emits granular events per node. Storage: `STORAGE_TYPE=memory` (default) or `sqlite` (persistent queries, sessions, and LangGraph checkpoints via `AsyncSqliteSaver`).
 
 ### Schema Management
 
-- **Metadata**: All backends (Postgres, BigQuery, SQLite) populate `TableInfo.description` and `ColumnInfo.description` from DB catalogs. SQLite uses optional JSON metadata file (`SQLITE_METADATA_PATH`).
+- **Metadata**: All backends populate `TableInfo.description` and `ColumnInfo.description` from DB catalogs. SQLite uses optional JSON metadata file (`SQLITE_METADATA_PATH`).
 - **Filtering**: `schema_include_tables` / `schema_exclude_tables` config. Include takes precedence.
-- **Context budgeting**: `context_max_tokens` × `context_schema_budget_pct` limits schema DDL in prompt. Tables with descriptions prioritized. Omitted tables listed in comment. Message history truncated to `context_history_max_messages`.
-- **Dynamic selection**: `schema_selection_mode` (`none`/`keyword`/`llm`). Keyword mode scores tables by token overlap with question. LLM mode asks model to pick relevant tables (falls back to keyword on failure).
+- **Context budgeting**: `context_max_tokens` × `context_schema_budget_pct` limits schema DDL in prompt. Tables with descriptions prioritized. Message history truncated to `context_history_max_messages`.
+- **Dynamic selection**: `schema_selection_mode` (`none`/`keyword`/`llm`). Keyword mode scores tables by token overlap. LLM mode asks model to pick relevant tables (falls back to keyword on failure).
+
+### Reliability
+
+- **LLM retry**: Tenacity exponential backoff for transient failures (`llm/retry.py`)
+- **DB query timeouts**: Parameterized timeouts across all backends
+- **Rate limiting**: Sliding-window per-IP on mutation endpoints (`api/rate_limit.py`)
+- **Query cache**: In-memory, keyed on normalized question + schema hash, TTL-based eviction
+- **Metrics**: Counters for queries, cache hits/misses, retries, corrections (`GET /api/health`)
 
 ### Source Layout (`src/text_to_sql/`)
 
 | Directory | Purpose |
 |-----------|---------|
-| `api/` | FastAPI endpoints — `POST /api/query`, `POST /api/approve/{id}`, `GET /api/history` |
-| `pipeline/` | LangGraph graph (`graph.py`), `run_query` tool (`tools.py`), orchestrator, approval manager |
-| `llm/` | LLM provider fallback chain (Anthropic → Google → OpenAI), system prompt with few-shot examples, token estimation (`tokens.py`) |
+| `api/` | FastAPI endpoints — query, approve, history, conversations, cache, health |
+| `pipeline/` | LangGraph graph, orchestrator, approval manager, result validators |
+| `llm/` | LLM provider fallback chain (Anthropic → Google → OpenAI), prompts, retry logic |
 | `db/` | Database backends (BigQuery, PostgreSQL, SQLite) via `DatabaseBackend` protocol |
 | `mcp/` | FastMCP server at `/mcp` — 2 tools: `generate_sql`, `execute_sql` |
-| `schema/` | Schema discovery with TTL-based caching, table filtering (include/exclude), budgeted rendering, dynamic table selection (`selector.py`) |
-| `store/` | Query record storage via `QueryStore` protocol |
+| `schema/` | Schema discovery, TTL caching, filtering, budgeted rendering, dynamic selection |
+| `store/` | Query and session storage — in-memory and SQLite implementations |
+| `cache/` | Query result cache with TTL and schema-hash invalidation |
+| `observability/` | Pipeline metrics collection |
 | `models/` | Pydantic v2 domain models and request/response schemas |
 
 ### Security (enforce during code review)
@@ -48,10 +62,12 @@ LangGraph ReAct agent with 5 nodes: `discover_schema → generate_query → chec
 - **Identifier validation** (`db/base.py`): validates table/column names before interpolation
 - **Modified SQL re-validation** (`approval.py`): user-edited SQL re-checked before execution
 - **Input constraints**: `max_length` on all user strings (question: 2000, modified_sql: 10000)
+- **Rate limiting**: Sliding-window per-IP on all mutation endpoints
+- **Parameterized timeouts**: DB query timeouts use parameterized queries (not string interpolation)
 
 ### Test Setup
 
-- `conftest.py`: auto-sets SQLite env, provides `FakeToolChatModel` (tool call + answer pairs), creates test app
+- `conftest.py`: auto-sets SQLite env + memory storage, provides `FakeToolChatModel` (tool call + answer pairs), creates test app
 - All LLM calls mocked — never hits real providers
 - Integration tests use in-memory SQLite with sample `users` table
 

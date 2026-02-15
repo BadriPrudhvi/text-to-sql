@@ -57,6 +57,7 @@ def _set_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("STORAGE_TYPE", "memory")
 
 
 @pytest.fixture

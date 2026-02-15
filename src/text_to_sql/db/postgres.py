@@ -95,13 +95,18 @@ class PostgresBackend:
         except Exception as e:
             return [str(e)]
 
-    async def execute_sql(self, sql: str) -> list[dict[str, Any]]:
+    async def execute_sql(
+        self, sql: str, timeout_seconds: float | None = None
+    ) -> list[dict[str, Any]]:
         assert self._engine is not None
         errors = check_read_only(sql)
         if errors:
             raise ValueError(errors[0])
 
         async with self._engine.connect() as conn:
+            if timeout_seconds:
+                timeout_ms = int(timeout_seconds * 1000)
+                await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
             result = await conn.execute(text(sql))
             rows = [dict(row._mapping) for row in result]
 

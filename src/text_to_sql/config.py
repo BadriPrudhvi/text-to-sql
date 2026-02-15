@@ -58,6 +58,31 @@ class Settings(BaseSettings):
     schema_selection_mode: str = "none"  # "none" | "keyword" | "llm"
     schema_max_selected_tables: int = 15
 
+    # Storage
+    storage_type: str = "memory"  # "memory" | "sqlite"
+    storage_sqlite_path: str = "./pipeline.db"
+
+    # Cache
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 86400
+
+    # Self-correction
+    max_correction_attempts: int = 2
+
+    # Reliability
+    db_query_timeout_seconds: int = 30
+    llm_retry_attempts: int = 3
+    llm_retry_min_wait_seconds: int = 2
+    llm_retry_max_wait_seconds: int = 10
+    rate_limit_requests_per_minute: int = 20
+
+    # LangSmith (optional)
+    langsmith_api_key: SecretStr = SecretStr("")
+    langsmith_project: str = "text-to-sql"
+
+    # Sessions
+    session_timeout_seconds: int = 3600
+
     # App
     app_host: str = "0.0.0.0"
     app_port: int = 8000
