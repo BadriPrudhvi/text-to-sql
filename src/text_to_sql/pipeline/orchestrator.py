@@ -210,6 +210,10 @@ class PipelineOrchestrator:
 
         record.generated_sql = graph_state.get("generated_sql") or ""
         record.validation_errors = graph_state.get("validation_errors", [])
+        record.query_type = graph_state.get("query_type", "simple")
+        if record.query_type == "analytical":
+            record.analysis_plan = graph_state.get("analysis_plan")
+            record.analysis_steps = graph_state.get("plan_results")
 
         if not state.next:
             if graph_state.get("error"):
