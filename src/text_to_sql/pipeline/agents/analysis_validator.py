@@ -70,7 +70,10 @@ def create_validate_analysis_node(
                 "event": "analysis_validation_warning",
                 "warnings": warnings,
             })
-            return {"messages": [HumanMessage(content=guidance)]}
+            return {
+                "messages": [HumanMessage(content=guidance)],
+                "synthesis_attempts": synthesis_attempts + 1,
+            }
 
         if warnings:
             logger.info(

@@ -58,11 +58,12 @@ class TestValidateAnalysisNode:
         }
         result = await node(state)
 
-        # Should add revision guidance
+        # Should add revision guidance and increment attempts
         assert result.get("messages")
         msg = result["messages"][0]
         assert isinstance(msg, HumanMessage)
         assert "revise" in msg.content.lower()
+        assert result["synthesis_attempts"] == 1
 
     @pytest.mark.asyncio
     async def test_no_revision_at_max_attempts(self, mock_stream_writer):
@@ -101,6 +102,25 @@ class TestValidateAnalysisNode:
         assert result.get("messages")
         msg = result["messages"][0]
         assert isinstance(msg, HumanMessage)
+
+    @pytest.mark.asyncio
+    async def test_resynthesis_triggers_with_default_config(self, mock_stream_writer):
+        """With default max_synthesis_attempts=1, first validation should trigger re-synthesis."""
+        node = create_validate_analysis_node(max_synthesis_attempts=1)
+        state = {
+            "messages": [HumanMessage(content="Analyze user data")],
+            "plan_results": [
+                {"description": "Step 1", "sql": "SELECT 1", "result": None, "error": "timeout"},
+                {"description": "Step 2", "sql": "SELECT 2", "result": None, "error": "timeout"},
+            ],
+            "answer": "Limited analysis due to data issues about user data.",
+            "synthesis_attempts": 0,
+        }
+        result = await node(state)
+
+        # First attempt (0 < 1) should trigger re-synthesis
+        assert result.get("messages")
+        assert result["synthesis_attempts"] == 1
 
     @pytest.mark.asyncio
     async def test_passes_empty_plan(self, mock_stream_writer):

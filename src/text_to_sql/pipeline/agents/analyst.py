@@ -62,7 +62,6 @@ def create_synthesize_analysis_node(
         return {
             "answer": answer,
             "messages": [AIMessage(content=answer)],
-            "synthesis_attempts": state.get("synthesis_attempts", 0) + 1,
         }
 
     return synthesize_analysis
