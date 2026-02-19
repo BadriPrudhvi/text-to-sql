@@ -95,8 +95,7 @@ async def stream_session_query(
     async def event_generator():
         async for event in orchestrator.stream_question(question, session_id):
             event_type = event.get("event", "update") if isinstance(event, dict) else "update"
-            yield {"event": event_type, "data": json.dumps(event)}
-        yield {"event": "done", "data": "{}"}
+            yield {"event": event_type, "data": json.dumps(event, default=str)}
 
     return EventSourceResponse(event_generator())
 

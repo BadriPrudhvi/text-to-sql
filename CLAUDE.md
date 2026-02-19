@@ -7,13 +7,15 @@ Text-to-SQL pipeline: natural language → SQL → results. Multi-turn conversat
 ## Commands
 
 ```bash
-uv sync                                          # Install
+uv sync                                          # Install backend
 cp .env.example .env                             # Configure (set at least one LLM API key)
-uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000  # Run
+uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000  # Run backend
 uv run pytest                                    # Test (all)
 uv run pytest tests/unit/test_graph.py::test_name # Test (single)
 uv run ruff check .                              # Lint
 uv run mypy .                                    # Type check
+cd frontend && npm install && npm run dev        # Run frontend (port 3000)
+cd frontend && npm run build                     # Build frontend
 ```
 
 ## Architecture
@@ -62,6 +64,20 @@ Sessions (`POST /api/conversations`) share LangGraph checkpoint state via sessio
 | `cache/` | Query result cache with TTL and schema-hash invalidation |
 | `observability/` | Pipeline metrics collection |
 | `models/` | Pydantic v2 domain models and request/response schemas |
+
+### Frontend (`frontend/src/`)
+
+Next.js 16 chatbot UI with SSE streaming, session management, and SQL approval flow. Proxies `/api/*` to the backend via `next.config.ts` rewrites. Uses shadcn/ui components, TanStack Table, shiki syntax highlighting, sql-formatter, and react-markdown with remark-gfm.
+
+| Directory | Purpose |
+|-----------|---------|
+| `hooks/` | `use-sse-stream` (SSE consumer with accumulated state), `use-chat` (message state + history), `use-session` (localStorage CRUD) |
+| `components/chat/` | Chat page layout (shadcn sidebar), message bubbles with query type badges, input bar, message list with quick-question pills |
+| `components/pipeline/` | Collapsible pipeline stepper with vertical timeline, color-coded status, analysis plan sub-steps |
+| `components/results/` | Data table (TanStack with sorting/pagination), SQL accordion (shiki + sql-formatter), markdown answer card (remark-gfm with table support) |
+| `components/approval/` | SQL review/edit/approve/reject dialog |
+| `components/session/` | shadcn sidebar with create/switch/delete sessions |
+| `lib/` | API client, TypeScript types mirroring backend models, SSE event constants with visibility flags |
 
 ### Security (enforce during code review)
 

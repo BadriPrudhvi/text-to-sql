@@ -146,6 +146,11 @@ class PipelineOrchestrator:
         self, question: str, session_id: str
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream pipeline events via SSE for a question in a session."""
+        record = QueryRecord(
+            natural_language=question,
+            database_type=self._database_type,
+            session_id=session_id,
+        )
         config = {"configurable": {"thread_id": session_id}}
 
         async for chunk in self._graph.astream(
@@ -154,6 +159,26 @@ class PipelineOrchestrator:
             stream_mode="custom",
         ):
             yield chunk
+
+        # Persist the record after streaming completes
+        await self._persist_record(record)
+        if self._session_store:
+            await self._session_store.update_activity(session_id, record.id)
+
+        # Yield final done event with full record data
+        yield {
+            "event": "done",
+            "query_id": record.id,
+            "generated_sql": record.generated_sql,
+            "result": record.result,
+            "answer": record.answer,
+            "error": record.error,
+            "approval_status": record.approval_status.value,
+            "query_type": record.query_type,
+            "validation_errors": record.validation_errors,
+            "analysis_plan": record.analysis_plan,
+            "analysis_steps": record.analysis_steps,
+        }
 
     async def execute_approved(self, query_id: str) -> QueryRecord:
         """Resume the LangGraph pipeline after human approval."""

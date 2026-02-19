@@ -67,6 +67,5 @@ Analysis results:
 Instructions:
 - Present key findings with specific numbers from the data
 - Identify cross-cutting insights that span multiple analysis steps
-- Provide actionable recommendations grounded in the data
 - If some steps failed, acknowledge limitations but still provide insights from available data
-- Be concise but thorough — aim for a complete answer to the user's question"""
+- Be concise and direct — answer the user's question without adding unsolicited recommendations"""
