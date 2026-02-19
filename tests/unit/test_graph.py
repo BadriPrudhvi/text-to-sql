@@ -184,6 +184,93 @@ async def test_graph_resume_with_modified_sql(mock_backend) -> None:
     assert state.values.get("generated_sql") == "SELECT count(*) AS total FROM users"
 
 
+@pytest.mark.asyncio
+async def test_multiturn_truncation_does_not_orphan_tool_messages(mock_backend) -> None:
+    """Truncating history must not start with a ToolMessage (orphaned tool_result).
+
+    Regression test for: anthropic.BadRequestError 400 — 'unexpected tool_use_id
+    found in tool_result blocks'. When context_history_max_messages is small and
+    the conversation accumulates tool_use/tool_result pairs, naive slicing can
+    leave a ToolMessage without its preceding AIMessage, which Anthropic rejects.
+    """
+    model = FakeToolChatModel(
+        messages=iter(
+            # Turn 1: tool call + answer, Turn 2: tool call + answer
+            make_agent_responses("SELECT count(*) AS total FROM users", "42 users.")
+        ),
+        structured_responses=_STRUCTURED,
+    )
+    # Set context_history_max_messages very low so truncation triggers on turn 2
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=model,
+        checkpointer=MemorySaver(),
+        context_history_max_messages=3,
+    )
+    config = {"configurable": {"thread_id": "test-trunc-1"}}
+
+    # Turn 1 — builds up: SystemMsg, HumanMsg, AIMsg(tool_call), ToolMsg, AIMsg(answer)
+    await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "How many users?"}]},
+        config=config,
+    )
+
+    # Turn 2 — adds HumanMsg, then re-enters generate_query with a long history.
+    # With max_messages=3, naive slicing would grab [..., ToolMsg, AIMsg, HumanMsg]
+    # starting with an orphaned ToolMsg. The fix skips leading ToolMessages.
+    await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "And how many are active?"}]},
+        config=config,
+    )
+
+    state = await graph.aget_state(config)
+    vals = state.values
+    # If the fix works, the pipeline completes without BadRequestError
+    assert vals.get("answer") is not None
+    assert not state.next
+
+
+@pytest.mark.asyncio
+async def test_multiturn_state_reset_clears_previous_results(mock_backend) -> None:
+    """State fields from a previous turn must not leak into the next turn.
+
+    Regression test for stale data leakage: after a simple query sets
+    generated_sql/result, a follow-up turn should start with clean state.
+    """
+    model = FakeToolChatModel(
+        messages=iter(
+            make_agent_responses("SELECT count(*) AS total FROM users", "42 users.")
+        ),
+        structured_responses=_STRUCTURED,
+    )
+    graph = compile_pipeline(
+        db_backend=mock_backend,
+        schema_cache=SchemaCache(ttl_seconds=3600),
+        chat_model=model,
+        checkpointer=MemorySaver(),
+    )
+    config = {"configurable": {"thread_id": "test-reset-1"}}
+
+    # Turn 1 — simple query with result
+    await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "How many users?"}]},
+        config=config,
+    )
+    state1 = await graph.aget_state(config)
+    assert state1.values.get("result") == [{"total": 42}]
+    assert state1.values.get("generated_sql") == "SELECT count(*) AS total FROM users"
+
+    # Turn 2 — another query; state should reflect this turn, not turn 1
+    await graph.ainvoke(
+        {"messages": [{"role": "user", "content": "List all users."}]},
+        config=config,
+    )
+    state2 = await graph.aget_state(config)
+    assert state2.values.get("error") is None
+    assert state2.values.get("answer") is not None
+
+
 def test_build_pipeline_graph_creates_nodes(mock_backend) -> None:
     """Verify the graph builder creates all expected nodes."""
     model = FakeToolChatModel(

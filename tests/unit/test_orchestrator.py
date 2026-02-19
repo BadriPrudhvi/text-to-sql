@@ -141,6 +141,81 @@ async def test_auto_execute_failure_marks_failed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_analytical_query_builds_combined_sql() -> None:
+    """Analytical queries should combine all step SQLs into generated_sql."""
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value=None)
+
+    mock_state = MagicMock()
+    mock_state.values = {
+        "messages": [],
+        "generated_sql": None,
+        "validation_errors": [],
+        "result": None,
+        "answer": "Analysis complete.",
+        "error": None,
+        "query_type": "analytical",
+        "analysis_plan": [
+            {"description": "Count customers", "sql_hint": "COUNT"},
+            {"description": "Average invoice", "sql_hint": "AVG"},
+        ],
+        "plan_results": [
+            {"description": "Count customers", "sql": "SELECT country, COUNT(*) FROM customers GROUP BY country", "result": [{"country": "US", "count": 10}], "error": None},
+            {"description": "Average invoice", "sql": "SELECT country, AVG(total) FROM invoices GROUP BY country", "result": [{"country": "US", "avg": 5.0}], "error": None},
+        ],
+    }
+    mock_state.next = ()
+    graph.aget_state = AsyncMock(return_value=mock_state)
+
+    orchestrator = PipelineOrchestrator(
+        graph=graph,
+        query_store=InMemoryQueryStore(),
+    )
+    record = await orchestrator.submit_question("Analyze customers by country")
+    assert record.query_type == "analytical"
+    assert "-- Step 1: Count customers" in record.generated_sql
+    assert "-- Step 2: Average invoice" in record.generated_sql
+    assert "SELECT country, COUNT(*)" in record.generated_sql
+    assert "SELECT country, AVG(total)" in record.generated_sql
+
+
+@pytest.mark.asyncio
+async def test_analytical_query_skips_failed_steps_in_combined_sql() -> None:
+    """Steps that failed (no SQL) should be excluded from combined SQL."""
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value=None)
+
+    mock_state = MagicMock()
+    mock_state.values = {
+        "messages": [],
+        "generated_sql": None,
+        "validation_errors": [],
+        "result": None,
+        "answer": "Partial analysis.",
+        "error": None,
+        "query_type": "analytical",
+        "analysis_plan": [
+            {"description": "Step A", "sql_hint": "hint"},
+            {"description": "Step B", "sql_hint": "hint"},
+        ],
+        "plan_results": [
+            {"description": "Step A", "sql": "SELECT 1", "result": [{"v": 1}], "error": None},
+            {"description": "Step B", "sql": None, "result": None, "error": "LLM failed"},
+        ],
+    }
+    mock_state.next = ()
+    graph.aget_state = AsyncMock(return_value=mock_state)
+
+    orchestrator = PipelineOrchestrator(
+        graph=graph,
+        query_store=InMemoryQueryStore(),
+    )
+    record = await orchestrator.submit_question("Analyze something")
+    assert "-- Step 1: Step A" in record.generated_sql
+    assert "Step B" not in record.generated_sql
+
+
+@pytest.mark.asyncio
 async def test_execute_failure_marks_failed() -> None:
     """If execution after approval returns an error, status should be FAILED."""
     # First call: pending (validation errors)

@@ -180,13 +180,13 @@ export function useSSEStream() {
           }
 
           // Accumulate response fields
-          if (eventType === "sql_generated" || eventType === "plan_step_sql_generated") {
+          if (eventType === "sql_generated") {
             sql = (data.sql as string) || sql;
           }
           if (eventType === "answer_generated" || eventType === "analysis_complete") {
             answer = (data.answer as string) || answer;
           }
-          if (eventType === "query_executed" || eventType === "plan_step_executed") {
+          if (eventType === "query_executed") {
             result = (data.result as Record<string, unknown>[]) || result;
           }
           if (eventType === "validation_failed") {

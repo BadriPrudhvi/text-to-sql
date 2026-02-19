@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Database } from "lucide-react";
 import { format as formatSQL } from "sql-formatter";
 import {
   Accordion,
@@ -54,12 +54,15 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
 
   if (!sql) return null;
 
-  // shiki generates sanitized HTML from code — safe to render
+  // shiki generates sanitized HTML from code (no user input in HTML generation) — safe to render
   return (
     <Accordion type="single" collapsible className="w-full">
-      <AccordionItem value="sql" className="border rounded-md">
+      <AccordionItem value="sql" className="rounded-md border border-blue-200 bg-blue-50/50">
         <AccordionTrigger className="px-3 py-2 text-xs hover:no-underline">
-          <span className="font-mono text-muted-foreground">SQL Query</span>
+          <div className="flex items-center gap-2">
+            <Database className="h-3.5 w-3.5 text-blue-500" />
+            <span className="font-medium text-blue-600">SQL Query</span>
+          </div>
         </AccordionTrigger>
         <AccordionContent className="px-3 pb-3">
           <div className="relative">
@@ -77,11 +80,11 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
             </Button>
             {highlighted ? (
               <div
-                className="overflow-x-auto rounded bg-muted/50 p-3 text-sm [&_pre]:!bg-transparent [&_code]:!bg-transparent"
+                className="overflow-x-auto rounded bg-white/80 p-3 text-sm [&_pre]:!bg-transparent [&_pre]:!m-0 [&_code]:!bg-transparent"
                 dangerouslySetInnerHTML={{ __html: highlighted }}
               />
             ) : (
-              <pre className="overflow-x-auto rounded bg-muted/50 p-3 text-sm font-mono whitespace-pre-wrap">
+              <pre className="overflow-x-auto rounded bg-white/80 p-3 text-sm font-mono whitespace-pre-wrap">
                 {formattedSQL}
               </pre>
             )}

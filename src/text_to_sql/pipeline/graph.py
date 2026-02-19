@@ -133,16 +133,41 @@ def build_pipeline_graph(
             for m in state["messages"]
             if isinstance(m, SystemMessage)
         ]
-        return {"messages": removals + [system_msg]}
+        # Reset per-turn state so previous turn's results don't leak
+        # into the current turn (e.g. simple query result showing in
+        # a follow-up analytical query).
+        return {
+            "messages": removals + [system_msg],
+            "generated_sql": None,
+            "result": None,
+            "validation_errors": [],
+            "error": None,
+            "answer": None,
+            "correction_attempts": 0,
+            "query_type": "simple",
+            "analysis_plan": None,
+            "plan_results": None,
+            "current_step": 0,
+            "synthesis_attempts": 0,
+        }
 
     async def generate_query(state: SQLAgentState) -> dict:
         """Invoke the LLM with tools. It either makes a tool call (SQL) or returns text (answer)."""
         writer = get_stream_writer()
         writer({"event": "llm_generation_started"})
         messages = state["messages"]
-        # Truncate history to keep context manageable
+        # Truncate history to keep context manageable.
+        # The slice must be tool-aware: never start with a ToolMessage
+        # (orphaned tool_result) since the Anthropic API requires every
+        # tool_result to follow the AIMessage that produced the tool_use.
         if len(messages) > context_history_max_messages + 1:
-            messages = [messages[0]] + messages[-(context_history_max_messages):]
+            tail = messages[-(context_history_max_messages):]
+            # Skip leading ToolMessages that lost their AIMessage partner
+            while tail and isinstance(tail[0], ToolMessage):
+                tail = tail[1:]
+            if not tail:
+                logger.warning("truncation_consumed_all_messages")
+            messages = [messages[0]] + tail
         response = await invoke_with_retry(model_with_tools, messages)
 
         updates: dict[str, Any] = {"messages": [response]}

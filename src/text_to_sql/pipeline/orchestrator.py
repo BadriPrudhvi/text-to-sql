@@ -239,6 +239,16 @@ class PipelineOrchestrator:
         if record.query_type == "analytical":
             record.analysis_plan = graph_state.get("analysis_plan")
             record.analysis_steps = graph_state.get("plan_results")
+            # Build combined SQL from all steps for display
+            plan_results = graph_state.get("plan_results") or []
+            step_sqls = []
+            for i, step in enumerate(plan_results):
+                if step.get("sql"):
+                    step_sqls.append(
+                        f"-- Step {i + 1}: {step.get('description', 'Unknown')}\n{step['sql']}"
+                    )
+            if step_sqls:
+                record.generated_sql = "\n\n".join(step_sqls)
 
         if not state.next:
             if graph_state.get("error"):
