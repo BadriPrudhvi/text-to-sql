@@ -54,7 +54,8 @@ Rules:
 - The query must be a SELECT statement
 - Use appropriate aggregations, grouping, and ordering
 - Limit results to a reasonable number of rows (use LIMIT if needed)
-- The query must be valid {dialect} SQL"""
+- The query must be valid {dialect} SQL
+- If the dialect is sqlite, do NOT use QUALIFY, PIVOT, UNPIVOT, MERGE, or any syntax not supported by SQLite — use subqueries or CTEs instead"""
 
 ANALYST_PROMPT = """\
 You are a data analyst synthesizing results from a multi-step analysis.
