@@ -6,7 +6,7 @@ An enterprise-grade text-to-SQL pipeline with multi-turn conversations, SSE stre
 
 - **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains and exponential backoff retry
 - **LangGraph ReAct agent** — SQL agent with tool-calling loop that generates SQL, validates results, self-corrects, and synthesizes natural language answers. Uses `interrupt()` for human review when validation errors are found
-- **Multi-agent analytical queries** — Complex analytical questions are automatically classified and routed to a multi-step pipeline: plan analysis steps, execute each SQL query, synthesize comprehensive insights with actionable recommendations
+- **Multi-agent analytical queries** — Complex analytical questions are automatically classified and routed to a multi-step pipeline: plan analysis steps, execute each SQL query, synthesize comprehensive insights
 - **Multi-turn conversations** — Session-based queries with LangGraph checkpoint persistence, enabling follow-up questions that reference prior context
 - **SSE streaming** — Real-time Server-Sent Events streaming pipeline progress (schema discovery, SQL generation, query execution, answer generation)
 - **Self-correction** — Result validation detects empty aggregates, suspicious negatives, and LIMIT mismatches, feeding warnings back to the LLM for automatic revision
@@ -109,11 +109,21 @@ The default config uses SQLite with the included [Chinook sample database](https
 
 ### 3. Run
 
+**Backend:**
+
 ```bash
 uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000
 ```
 
 The API docs are available at http://localhost:8000/docs.
+
+**Frontend (optional):**
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Opens a chatbot UI at http://localhost:3000 that proxies API requests to the backend on port 8000.
 
 ### 4. Query
 
@@ -354,6 +364,8 @@ Stream pipeline events via SSE. Pass the question as a query parameter.
 
 **Events (analytical path):** `schema_discovery_started`, `schema_discovered`, `classifying_query`, `query_classified`, `planning_analysis`, `analysis_plan_created`, `plan_step_started`, `plan_step_sql_generated`, `plan_step_executed`, `plan_step_failed`, `analysis_synthesis_started`, `analysis_complete`, `analysis_validation_passed`, `done`
 
+The `done` event includes the full persisted record (`query_id`, `generated_sql`, `result`, `answer`, `error`, `approval_status`, `query_type`, `validation_errors`).
+
 ### `GET /api/conversations/{session_id}/history`
 
 Get all queries in a conversation session.
@@ -493,6 +505,15 @@ tests/
 ├── conftest.py           # Shared fixtures
 ├── integration/          # End-to-end API tests
 └── unit/                 # Unit tests for each component
+
+frontend/                     # Next.js chatbot UI
+├── src/
+│   ├── app/              # Root layout and page
+│   ├── components/       # Chat, pipeline, results, approval, session UI
+│   ├── hooks/            # SSE streaming, chat state, session management
+│   └── lib/              # API client, types, constants
+├── next.config.ts        # API proxy to backend (port 8000)
+└── package.json
 ```
 
 ## License
