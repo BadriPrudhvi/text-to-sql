@@ -37,11 +37,14 @@ export function StepDetail({ sql, result, error }: StepDetailProps) {
   useEffect(() => {
     if (!formattedSQL) return;
     let cancelled = false;
-    import("@/lib/shiki").then(({ highlightSQL }) => {
-      highlightSQL(formattedSQL).then((html) => {
+    import("@/lib/shiki")
+      .then(({ highlightSQL }) => highlightSQL(formattedSQL))
+      .then((html) => {
         if (!cancelled) setHighlighted(html);
+      })
+      .catch(() => {
+        // Syntax highlighting is best-effort; fallback to plain text
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -49,9 +52,13 @@ export function StepDetail({ sql, result, error }: StepDetailProps) {
 
   const handleCopy = async () => {
     if (!sql) return;
-    await navigator.clipboard.writeText(sql);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may not be available in all contexts
+    }
   };
 
   const previewRows = result?.slice(0, MAX_PREVIEW_ROWS) ?? [];

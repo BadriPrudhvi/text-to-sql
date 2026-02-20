@@ -21,6 +21,7 @@ import {
 import type { PipelineStep, StepStatus } from "@/lib/types";
 import { EVENT_META } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { QueryTypeBadge } from "@/components/ui/query-type-badge";
 import { StepDetail } from "@/components/pipeline/step-detail";
 
 const ICON_MAP = {
@@ -135,18 +136,7 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
         </button>
 
         {/* Query type badge — sits outside the button */}
-        {queryType && (
-          <span
-            className={cn(
-              "inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-              queryType === "analytical"
-                ? "border-amber-200/60 bg-amber-50 text-amber-600"
-                : "border-border bg-muted text-muted-foreground"
-            )}
-          >
-            {queryType}
-          </span>
-        )}
+        {queryType && <QueryTypeBadge queryType={queryType} />}
       </div>
 
       {/* Expanded step list */}

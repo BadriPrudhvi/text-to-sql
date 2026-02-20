@@ -7,21 +7,7 @@ import { DataTable } from "@/components/results/data-table";
 import { AnswerCard } from "@/components/results/answer-card";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-function QueryTypeBadge({ queryType }: { queryType: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-        queryType === "analytical"
-          ? "border-amber-200/60 bg-amber-50 text-amber-600"
-          : "border-border bg-muted text-muted-foreground"
-      )}
-    >
-      {queryType}
-    </span>
-  );
-}
+import { QueryTypeBadge } from "@/components/ui/query-type-badge";
 
 interface MessageBubbleProps {
   message: ChatMessage;
