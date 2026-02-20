@@ -13,6 +13,7 @@ import {
   FileText,
   Sparkles,
   ChevronDown,
+  ChevronRight,
   Loader2,
   CheckCircle2,
   CircleAlert,
@@ -20,6 +21,7 @@ import {
 import type { PipelineStep, StepStatus } from "@/lib/types";
 import { EVENT_META } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { StepDetail } from "@/components/pipeline/step-detail";
 
 const ICON_MAP = {
   search: Search,
@@ -53,10 +55,21 @@ function StepIcon({ icon, status }: { icon: keyof typeof ICON_MAP; status: StepS
 interface PipelineStepperProps {
   steps: PipelineStep[];
   isStreaming: boolean;
+  analysisSteps?: Record<string, unknown>[] | null;
 }
 
-export function PipelineStepper({ steps, isStreaming }: PipelineStepperProps) {
+export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineStepperProps) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedStepIndices, setExpandedStepIndices] = useState<Set<number>>(new Set());
+
+  const toggleStepDetail = (stepIndex: number) => {
+    setExpandedStepIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepIndex)) next.delete(stepIndex);
+      else next.add(stepIndex);
+      return next;
+    });
+  };
 
   const visibleSteps = steps.filter((s) => EVENT_META[s.event]?.visible);
 
@@ -149,6 +162,18 @@ export function PipelineStepper({ steps, isStreaming }: PipelineStepperProps) {
                 ? (step.data?.steps as string[]) || []
                 : [];
 
+            // Check if this is an expandable analysis step
+            const isAnalysisStep =
+              step.event === "plan_step_executed" || step.event === "plan_step_failed";
+            const stepIndex = isAnalysisStep
+              ? (step.data?.step_index as number | undefined) ?? -1
+              : -1;
+            const stepData =
+              isAnalysisStep && stepIndex >= 0 && analysisSteps
+                ? analysisSteps[stepIndex]
+                : null;
+            const isStepExpanded = stepData && expandedStepIndices.has(stepIndex);
+
             return (
               <div key={i} className="flex gap-2.5">
                 {/* Timeline rail */}
@@ -179,11 +204,34 @@ export function PipelineStepper({ steps, isStreaming }: PipelineStepperProps) {
 
                 {/* Content */}
                 <div className={cn("pb-3 min-w-0", isLast && "pb-1")}>
-                  <p className="text-xs font-medium leading-5">{step.label}</p>
-                  {step.detail && (
+                  {stepData ? (
+                    <button
+                      onClick={() => toggleStepDetail(stepIndex)}
+                      className="flex items-center gap-1 text-xs font-medium leading-5 hover:text-blue-600 transition-colors"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "h-3 w-3 shrink-0 transition-transform duration-200",
+                          isStepExpanded && "rotate-90"
+                        )}
+                      />
+                      {step.label}
+                    </button>
+                  ) : (
+                    <p className="text-xs font-medium leading-5">{step.label}</p>
+                  )}
+                  {step.detail && !isStepExpanded && (
                     <p className="truncate text-xs text-muted-foreground mt-0.5">
                       {step.detail}
                     </p>
+                  )}
+                  {/* Expanded step detail */}
+                  {isStepExpanded && stepData && (
+                    <StepDetail
+                      sql={(stepData.sql as string) || null}
+                      result={(stepData.result as Record<string, unknown>[]) || null}
+                      error={(stepData.error as string) || null}
+                    />
                   )}
                   {/* Analysis plan sub-steps */}
                   {planSteps.length > 0 && (

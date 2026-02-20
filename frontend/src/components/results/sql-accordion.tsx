@@ -33,11 +33,8 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
 
   useEffect(() => {
     let cancelled = false;
-    import("shiki").then(({ codeToHtml }) => {
-      codeToHtml(formattedSQL, {
-        lang: "sql",
-        theme: "github-light",
-      }).then((html) => {
+    import("@/lib/shiki").then(({ highlightSQL }) => {
+      highlightSQL(formattedSQL).then((html) => {
         if (!cancelled) setHighlighted(html);
       });
     });

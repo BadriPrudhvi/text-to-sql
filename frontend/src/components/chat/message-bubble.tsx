@@ -85,7 +85,11 @@ function AssistantContent({
 
     return (
       <div className="space-y-3">
-        <PipelineStepper steps={pipelineSteps} isStreaming={!!isStreaming} />
+        <PipelineStepper
+          steps={pipelineSteps}
+          isStreaming={!!isStreaming}
+          analysisSteps={queryResponse?.analysis_steps}
+        />
 
         {error && (
           <div className="flex items-start gap-2 text-sm text-destructive">
@@ -110,7 +114,8 @@ function AssistantContent({
         )}
 
         {queryResponse?.generated_sql &&
-          queryResponse.approval_status !== "pending" && (
+          queryResponse.approval_status !== "pending" &&
+          queryResponse.query_type !== "analytical" && (
             <SQLAccordion sql={queryResponse.generated_sql} />
           )}
 
