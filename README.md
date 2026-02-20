@@ -1,6 +1,8 @@
 # Text-to-SQL Pipeline
 
-An enterprise-grade text-to-SQL pipeline with multi-turn conversations, SSE streaming, self-correction, query caching, and human-in-the-loop approval. Built with FastAPI, LangChain, and LangGraph.
+Ask questions about your data in plain English and get back SQL queries, results, and natural language answers. The pipeline connects to your database, generates SQL using an LLM, validates and executes it, and returns a human-readable response — all through a chat UI or REST API.
+
+Supports multi-turn conversations, real-time streaming, automatic self-correction, query caching, and human-in-the-loop SQL approval. Built with FastAPI, LangChain, and LangGraph.
 
 ## Features
 
@@ -79,13 +81,20 @@ graph TD
     Orch --> A
 ```
 
+## Prerequisites
+
+- **Python 3.13+** — [python.org/downloads](https://www.python.org/downloads/)
+- **uv** (Python package manager) — `curl -LsSf https://astral.sh/uv/install.sh | sh` ([docs](https://docs.astral.sh/uv/))
+- **Node.js 18+** (only for the frontend) — [nodejs.org](https://nodejs.org/)
+- **An LLM API key** from at least one provider (see step 2 below). API usage is billed by the provider — expect a few cents per query.
+
 ## Quick Start
 
 ### 1. Install
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
-
 ```bash
+git clone https://github.com/BadriPrudhvi/text-to-sql.git
+cd text-to-sql
 uv sync
 ```
 
@@ -97,7 +106,13 @@ Copy the example environment file and add at least one LLM API key:
 cp .env.example .env
 ```
 
-Edit `.env` and set your API key(s). Only providers with keys will be used — the fallback order is Anthropic → Google Gemini → OpenAI.
+Edit `.env` and set your API key(s). You only need **one** provider — pick whichever you already have an account with. The fallback order is Anthropic → Google Gemini → OpenAI.
+
+| Provider | Get your key | Env variable |
+|----------|-------------|--------------|
+| Anthropic (default) | [console.anthropic.com](https://console.anthropic.com/) | `ANTHROPIC_API_KEY` |
+| Google Gemini | [aistudio.google.com](https://aistudio.google.com/app/apikey) | `GOOGLE_API_KEY` |
+| OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-your-key-here
@@ -115,15 +130,19 @@ The default config uses SQLite with the included [Chinook sample database](https
 uv run uvicorn text_to_sql.app:app --host 0.0.0.0 --port 8000
 ```
 
-The API docs are available at http://localhost:8000/docs.
+You should see `Uvicorn running on http://0.0.0.0:8000`. The interactive API docs are at http://localhost:8000/docs.
 
-**Frontend (optional):**
+**Frontend (recommended way to try it):**
+
+Open a second terminal and run:
 
 ```bash
 cd frontend && npm install && npm run dev
 ```
 
-Opens a chatbot UI at http://localhost:3000 that proxies API requests to the backend on port 8000.
+Opens a chatbot UI at http://localhost:3000. The backend must be running first — the frontend proxies all API requests to port 8000.
+
+> **Tip:** The frontend is the easiest way to explore the pipeline. Type a question, watch the pipeline steps stream in real time, and see the SQL + results. The curl commands below are useful for scripting and debugging.
 
 ### 4. Query
 
@@ -135,9 +154,9 @@ curl -X POST http://localhost:8000/api/query \
   -d '{"question": "What are the top 5 best-selling artists?"}'
 ```
 
-If the generated SQL is valid, it auto-executes and returns results immediately with `approval_status: "executed"`.
+If the generated SQL passes validation, it executes automatically and returns results with `approval_status: "executed"`.
 
-If the SQL has validation errors, the response will have `approval_status: "pending"` — proceed to Step 2 to review and approve.
+If the SQL has issues (e.g. references a non-existent table), the pipeline pauses and returns `approval_status: "pending"` so you can review, edit, or reject the SQL before it runs. This is the "human-in-the-loop" approval flow — proceed to Step 2.
 
 **Step 2 — Approve (only if pending):**
 
@@ -163,10 +182,10 @@ curl http://localhost:8000/api/history
 
 ### 5. Conversations (multi-turn)
 
-For follow-up questions that reference prior context, use conversation sessions:
+For follow-up questions that reference prior context, use conversation sessions (the frontend handles this automatically):
 
 ```bash
-# Create a session
+# Create a session (requires jq: brew install jq / apt install jq)
 SESSION=$(curl -s -X POST http://localhost:8000/api/conversations | jq -r .session_id)
 
 # Ask a question
@@ -188,18 +207,18 @@ curl -N "http://localhost:8000/api/conversations/$SESSION/stream?question=How+ma
 
 ### Example Questions (Chinook DB)
 
-The pipeline handles queries from simple lookups to complex analytics:
+The pipeline generates the SQL for you — just type a question. It handles JOINs, CTEs, window functions, subqueries, and more.
 
-| Difficulty | Question | SQL Pattern |
-|-----------|----------|-------------|
-| Basic | "How many tracks are in the database?" | `SELECT COUNT(*) FROM Track` |
-| Filter | "List all tracks longer than 5 minutes" | `SELECT Name FROM Track WHERE Milliseconds > 300000` |
-| JOIN | "Show all albums by Led Zeppelin" | `SELECT al.Title FROM Artist ar JOIN Album al ON ar.ArtistId = al.ArtistId WHERE ar.Name = 'Led Zeppelin'` |
-| Aggregate | "Top 5 genres by number of tracks" | `SELECT g.Name, COUNT(*) FROM Genre g JOIN Track t ON g.GenreId = t.GenreId GROUP BY g.GenreId ORDER BY COUNT(*) DESC LIMIT 5` |
-| Multi-JOIN | "Top 5 genres by total sales revenue" | `SELECT g.Name, SUM(il.UnitPrice * il.Quantity) FROM Genre g JOIN Track t ON g.GenreId = t.GenreId JOIN InvoiceLine il ON t.TrackId = il.TrackId GROUP BY g.GenreId ORDER BY 2 DESC LIMIT 5` |
-| Subquery | "Customers who spent more than average" | `SELECT c.FirstName, c.LastName, SUM(i.Total) FROM Customer c JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY c.CustomerId HAVING SUM(i.Total) > (SELECT AVG(t) FROM (SELECT SUM(Total) t FROM Invoice GROUP BY CustomerId))` |
-| Window | "Rank employees by their customers' total purchases" | `SELECT e.FirstName, e.LastName, SUM(i.Total), RANK() OVER (ORDER BY SUM(i.Total) DESC) FROM Employee e JOIN Customer c ON e.EmployeeId = c.SupportRepId JOIN Invoice i ON c.CustomerId = i.CustomerId GROUP BY e.EmployeeId` |
-| Analytical | "Analyze sales data and recommend ways to increase revenue" | Multi-step plan: monthly trends, top genres, customer segments → synthesized insights with recommendations |
+**Simple** (single query, instant result):
+- "How many tracks are in the database?"
+- "Show all albums by Led Zeppelin"
+- "Top 5 genres by total sales revenue"
+- "Which customers spent more than the average customer?"
+- "Rank employees by their customers' total purchases"
+
+**Analytical** (multi-step plan with synthesized insights):
+- "Analyze sales trends and suggest ways to increase revenue"
+- "Compare customer spending patterns across different countries"
 
 ## Configuration
 
@@ -238,161 +257,34 @@ All settings are configured via environment variables (or a `.env` file).
 | `APP_PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Log level |
 
-## LLM Provider Setup
+## API Endpoints
 
-The pipeline uses LangChain's native provider integrations with `.with_fallbacks()` for automatic failover.
+Full interactive documentation is available at http://localhost:8000/docs when the backend is running.
 
-**Anthropic (default):** Set `ANTHROPIC_API_KEY`. Uses `ChatAnthropic` with Claude Opus 4.6.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/query` | Submit a question — auto-executes if valid, returns pending if validation errors |
+| `POST` | `/api/approve/{query_id}` | Approve, reject, or edit a pending query's SQL |
+| `GET` | `/api/history` | Paginated query history (`limit`, `offset` params) |
+| `POST` | `/api/conversations` | Create a conversation session for multi-turn queries |
+| `POST` | `/api/conversations/{id}/query` | Ask a follow-up question within a session |
+| `GET` | `/api/conversations/{id}/stream` | SSE stream of pipeline events (real-time progress) |
+| `GET` | `/api/conversations/{id}/history` | All queries in a session |
+| `GET` | `/api/cache/stats` | Cache hit/miss statistics |
+| `POST` | `/api/cache/flush` | Clear the query cache |
+| `GET` | `/api/health` | Health check with pipeline metrics |
 
-**Google Gemini:** Set `GOOGLE_API_KEY`. Uses `ChatGoogleGenerativeAI` with Gemini 3 Pro.
+## MCP Server
 
-**OpenAI:** Set `OPENAI_API_KEY`. Uses `ChatOpenAI` with GPT-4o.
-
-Configure any combination. The fallback chain is built from all providers with valid keys, in the order listed above.
-
-## API Reference
-
-### `POST /api/query`
-
-Submit a natural language question. Valid queries auto-execute and return results immediately. Queries with validation errors pause for human review.
-
-**Request:**
-```json
-{
-  "question": "How many users signed up last month?"
-}
-```
-
-**Response (auto-executed):**
-```json
-{
-  "query_id": "abc-123",
-  "question": "How many users signed up last month?",
-  "generated_sql": "SELECT count(*) FROM users WHERE created_at >= '2026-01-01'",
-  "validation_errors": [],
-  "approval_status": "executed",
-  "message": "Query executed successfully.",
-  "result": [{"count": 42}],
-  "answer": "There were 42 users who signed up last month.",
-  "error": null
-}
-```
-
-**Response (pending approval):**
-```json
-{
-  "query_id": "abc-456",
-  "question": "How many items in stock?",
-  "generated_sql": "SELECT count(*) FROM nonexistent_table",
-  "validation_errors": ["no such table: nonexistent_table"],
-  "approval_status": "pending",
-  "message": "SQL generated. Awaiting approval.",
-  "result": null,
-  "answer": null,
-  "error": null
-}
-```
-
-### `POST /api/approve/{query_id}`
-
-Approve or reject a pending query. Approved queries are executed immediately.
-
-**Request:**
-```json
-{
-  "approved": true,
-  "modified_sql": null
-}
-```
-
-**Response:**
-```json
-{
-  "query_id": "abc-123",
-  "approval_status": "executed",
-  "result": [{"count": 42}],
-  "answer": "There are 42 items.",
-  "error": null
-}
-```
-
-You can optionally edit the SQL before approving by passing `modified_sql`.
-
-### `GET /api/history`
-
-Get paginated query history.
-
-**Query params:** `limit` (default 50), `offset` (default 0)
-
-**Response:**
-```json
-{
-  "queries": [...],
-  "total": 12
-}
-```
-
-### `POST /api/conversations`
-
-Create a new conversation session for multi-turn queries.
-
-**Response:**
-```json
-{
-  "session_id": "uuid-here"
-}
-```
-
-### `POST /api/conversations/{session_id}/query`
-
-Submit a question within a conversation session. Follow-up questions can reference prior context.
-
-**Request:**
-```json
-{
-  "question": "Now break that down by region"
-}
-```
-
-### `GET /api/conversations/{session_id}/stream`
-
-Stream pipeline events via SSE. Pass the question as a query parameter.
-
-**Query params:** `question` (required)
-
-**Events (simple path):** `schema_discovery_started`, `schema_discovered`, `classifying_query`, `query_classified`, `llm_generation_started`, `sql_generated`, `validation_passed`, `query_execution_started`, `query_executed`, `answer_generated`, `done`
-
-**Events (analytical path):** `schema_discovery_started`, `schema_discovered`, `classifying_query`, `query_classified`, `planning_analysis`, `analysis_plan_created`, `plan_step_started`, `plan_step_sql_generated`, `plan_step_executed`, `plan_step_failed`, `analysis_synthesis_started`, `analysis_complete`, `analysis_validation_passed`, `done`
-
-The `done` event includes the full persisted record (`query_id`, `generated_sql`, `result`, `answer`, `error`, `approval_status`, `query_type`, `validation_errors`).
-
-### `GET /api/conversations/{session_id}/history`
-
-Get all queries in a conversation session.
-
-### `GET /api/cache/stats`
-
-Get cache hit/miss statistics.
-
-### `POST /api/cache/flush`
-
-Flush all cached queries.
-
-### `GET /api/health`
-
-Health check with pipeline metrics (queries total, executed, failed, cache hits/misses, retries, corrections).
-
-## MCP Tools
-
-Five MCP tools are available at `/mcp` via Streamable HTTP transport:
+The backend also exposes an [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server at `/mcp`, so AI-powered editors like Claude Code, Cursor, or VS Code Copilot can query your database directly. Point your editor's MCP client to `http://localhost:8000/mcp`.
 
 | Tool | Description |
 |------|-------------|
-| `generate_sql` | Generate SQL from a natural language question. Valid queries auto-execute and return results. Queries with validation errors return pending status for approval. |
-| `execute_sql` | Execute a previously approved SQL query by `query_id`. |
-| `create_session` | Create a new conversation session for multi-turn queries. Returns a `session_id`. |
-| `query_in_session` | Ask a question within a session. The LLM remembers prior questions, enabling follow-up queries without repeating context. |
-| `get_session_history` | Get all queries in a conversation session by `session_id`. |
+| `generate_sql` | Generate and execute SQL from a natural language question |
+| `execute_sql` | Execute a previously approved query by ID |
+| `create_session` | Create a conversation session for multi-turn queries |
+| `query_in_session` | Ask a follow-up question within a session |
+| `get_session_history` | Get all queries in a session |
 
 ## Database Setup
 
@@ -515,6 +407,16 @@ frontend/                     # Next.js chatbot UI
 ├── next.config.ts        # API proxy to backend (port 8000)
 └── package.json
 ```
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `ModuleNotFoundError: No module named 'text_to_sql'` | Run `uv sync` again. On macOS with Python 3.13, see the [known .pth bug workaround](https://github.com/astral-sh/uv/issues/7790). |
+| `No LLM providers configured` or similar on startup | Check that `.env` exists and has at least one valid API key set. |
+| Frontend shows "Failed to fetch" or blank page | Make sure the backend is running on port 8000 before starting the frontend. |
+| `401 Unauthorized` from the LLM provider | Your API key is invalid or expired. Regenerate it from the provider's dashboard. |
+| Queries are slow (10+ seconds) | Normal for first queries — the LLM call takes a few seconds. Subsequent identical questions hit the cache and return instantly. |
 
 ## License
 
