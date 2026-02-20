@@ -4,6 +4,8 @@ Ask questions about your data in plain English and get back SQL queries, results
 
 Supports multi-turn conversations, real-time streaming, automatic self-correction, query caching, and human-in-the-loop SQL approval. Built with FastAPI, LangChain, and LangGraph.
 
+![Text-to-SQL Demo](assets/Text-to-SQL.gif)
+
 ## Features
 
 - **Multi-provider LLM support** — Anthropic Claude, Google Gemini, and OpenAI with automatic fallback chains and exponential backoff retry
