@@ -43,6 +43,18 @@ interface ColumnAnalysis {
   numericColumns: string[];
 }
 
+const ID_PATTERNS = /(?:^id$|_id$|Id$|ID$|_pk$|_fk$|_key$)/;
+
+function looksLikeId(key: string, values: unknown[]): boolean {
+  if (ID_PATTERNS.test(key)) return true;
+  // All unique integers suggest a primary key / foreign key
+  if (values.length >= 2 && values.every((v) => Number.isInteger(Number(v)))) {
+    const unique = new Set(values.map(String));
+    if (unique.size === values.length) return true;
+  }
+  return false;
+}
+
 function analyzeColumns(data: Record<string, unknown>[]): ColumnAnalysis {
   if (data.length === 0) return { stringColumns: [], numericColumns: [] };
 
@@ -61,7 +73,12 @@ function analyzeColumns(data: Record<string, unknown>[]): ColumnAnalysis {
     );
 
     if (allNumeric) {
-      numericColumns.push(key);
+      // Skip ID/key columns — they're not meaningful metrics
+      if (looksLikeId(key, nonNullValues)) {
+        stringColumns.push(key);
+      } else {
+        numericColumns.push(key);
+      }
     } else {
       stringColumns.push(key);
     }
@@ -114,7 +131,8 @@ function isPieViable(analysis: ColumnAnalysis, dataLength: number): boolean {
 function isLineViable(analysis: ColumnAnalysis, dataLength: number, data?: Record<string, unknown>[]): boolean {
   if (analysis.numericColumns.length < 1 || dataLength < 2) return false;
   if (!data) return false;
-  return hasDateColumn(data, analysis.stringColumns) !== null || dataLength >= 5;
+  // Line charts only make sense for ordered data (dates or large sequential datasets)
+  return hasDateColumn(data, analysis.stringColumns) !== null || dataLength > 6;
 }
 
 // Custom tooltip for both chart types
