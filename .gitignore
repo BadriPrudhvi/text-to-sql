@@ -30,3 +30,5 @@ frontend/.next/
 .playwright-mcp/
 
 docs/
+
+versatile-execution-agent/

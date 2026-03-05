@@ -44,7 +44,7 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage, tables 
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25, delay: i * 0.08 }}
                   onClick={() => onSendMessage(q)}
-                  className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                  className="rounded-full border border-violet-300/40 bg-violet-50 px-3 py-1.5 text-xs text-violet-700 hover:bg-violet-100 hover:border-violet-300/60 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20 dark:hover:border-violet-400/30 transition-colors"
                 >
                   {q}
                 </motion.button>
@@ -90,6 +90,9 @@ function FollowUpPills({
 }) {
   if (!onSend || messages.length === 0) return null;
 
+  // Hide while any message is streaming
+  if (messages.some((m) => m.isStreaming)) return null;
+
   // Find last assistant message that is done streaming and has a query response
   const lastAssistant = [...messages].reverse().find(
     (m) => m.role === "assistant" && !m.isStreaming && m.queryResponse
@@ -123,7 +126,7 @@ function FollowUpPills({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.2, delay: 0.35 + i * 0.06 }}
           onClick={() => onSend(q)}
-          className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="rounded-full border border-violet-300/40 bg-violet-50 px-3 py-1.5 text-xs text-violet-700 hover:bg-violet-100 hover:border-violet-300/60 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20 dark:hover:border-violet-400/30 transition-colors"
         >
           {q}
         </motion.button>

@@ -158,6 +158,9 @@ class TestAnalyticalPipelineIntegration:
             messages=iter([
                 AIMessage(content="SELECT count(*) AS total FROM users"),
                 AIMessage(content="SELECT * FROM nonexistent_table"),
+                # Correction attempts for the bad query (executor retries up to 2 times)
+                AIMessage(content="SELECT * FROM nonexistent_table"),
+                AIMessage(content="SELECT * FROM nonexistent_table"),
                 AIMessage(
                     content="Based on available data: 2 users found. "
                     "Some analysis steps failed but core user data indicates "
