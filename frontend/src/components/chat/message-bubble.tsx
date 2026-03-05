@@ -120,7 +120,7 @@ function AssistantContent({
         {queryResponse?.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
           <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
         ) : queryResponse?.answer ? (
-          <AnswerCard answer={queryResponse.answer} />
+          <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse?.result?.length} />
         ) : null}
 
         {queryResponse?.generated_sql && !isStreaming && (
@@ -170,7 +170,7 @@ function AssistantContent({
         {queryResponse.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
           <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
         ) : queryResponse.answer ? (
-          <AnswerCard answer={queryResponse.answer} />
+          <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse.result?.length} />
         ) : null}
         {queryResponse.generated_sql && (
           <SourceTables sql={queryResponse.generated_sql} />

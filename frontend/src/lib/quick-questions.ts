@@ -76,7 +76,9 @@ export function generateFollowUpQuestions(
 
   if (result && result.length > 0) {
     const columns = Object.keys(result[0]);
+    const idPattern = /(?:^id$|_id$|Id$|ID$|_pk$|_fk$|_key$)/;
     const numericCols = columns.filter((col) =>
+      !idPattern.test(col) &&
       result.every((row) => row[col] == null || typeof row[col] === "number" || !isNaN(Number(row[col])))
     );
 

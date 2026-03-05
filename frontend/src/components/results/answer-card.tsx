@@ -6,9 +6,11 @@ import remarkGfm from "remark-gfm";
 
 interface AnswerCardProps {
   answer: string;
+  /** When true, suppress markdown tables (avoids duplicate when DataTable is already shown) */
+  hideTable?: boolean;
 }
 
-export function AnswerCard({ answer }: AnswerCardProps) {
+export function AnswerCard({ answer, hideTable }: AnswerCardProps) {
   if (!answer) return null;
 
   return (
@@ -50,22 +52,22 @@ export function AnswerCard({ answer }: AnswerCardProps) {
             </code>
           ),
           hr: () => <hr className="my-3 border-border" />,
-          table: ({ children }) => (
+          table: hideTable ? () => null : ({ children }) => (
             <div className="my-3 overflow-x-auto rounded-md border">
               <table className="w-full text-xs">{children}</table>
             </div>
           ),
-          thead: ({ children }) => (
+          thead: hideTable ? () => null : ({ children }) => (
             <thead className="bg-muted/50 border-b">{children}</thead>
           ),
-          tbody: ({ children }) => <tbody className="divide-y">{children}</tbody>,
-          tr: ({ children }) => <tr>{children}</tr>,
-          th: ({ children }) => (
+          tbody: hideTable ? () => null : ({ children }) => <tbody className="divide-y">{children}</tbody>,
+          tr: hideTable ? () => null : ({ children }) => <tr>{children}</tr>,
+          th: hideTable ? () => null : ({ children }) => (
             <th className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">
               {children}
             </th>
           ),
-          td: ({ children }) => (
+          td: hideTable ? () => null : ({ children }) => (
             <td className="px-3 py-2 whitespace-nowrap">{children}</td>
           ),
         }}
