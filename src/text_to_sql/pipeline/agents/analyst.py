@@ -30,13 +30,17 @@ def create_synthesize_analysis_node(
         question = extract_user_question(state["messages"])
         plan_results = state.get("plan_results") or []
 
-        # Build results context
+        # Build results context with bounded row counts
+        _MAX_ROWS_PER_STEP = 20
         parts = []
         for i, r in enumerate(plan_results):
             status = "SUCCESS" if not r.get("error") else "FAILED"
             result_data = ""
             if r.get("result"):
-                result_data = json.dumps(r["result"][:20], default=str)
+                rows = r["result"][:_MAX_ROWS_PER_STEP]
+                result_data = json.dumps(rows, default=str)
+                if len(r["result"]) > _MAX_ROWS_PER_STEP:
+                    result_data += f"\n... ({len(r['result'])} total rows, showing first {_MAX_ROWS_PER_STEP})"
             elif r.get("error"):
                 result_data = f"Error: {r['error']}"
             parts.append(
