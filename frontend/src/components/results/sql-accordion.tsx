@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Check, Database } from "lucide-react";
+import { Copy, Check, Database, Download } from "lucide-react";
 import { format as formatSQL } from "sql-formatter";
 import {
   Accordion,
@@ -10,6 +10,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { exportSQL } from "@/lib/export";
 
 interface SQLAccordionProps {
   sql: string;
@@ -74,6 +75,15 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-1 right-9 h-7 w-7"
+              onClick={() => exportSQL(sql)}
+              title="Download as .sql"
+            >
+              <Download className="h-3.5 w-3.5" />
             </Button>
             {highlighted ? (
               <div

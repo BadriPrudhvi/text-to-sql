@@ -34,7 +34,7 @@ export function SourceTables({ sql }: SourceTablesProps) {
       {tables.map((table) => (
         <span
           key={table}
-          className="inline-flex items-center rounded-full bg-muted/60 border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground font-mono"
+          className="inline-flex items-center rounded-full bg-muted/60 border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground font-mono transition-all duration-200 hover:scale-105 hover:bg-muted hover:border-border hover:text-foreground cursor-default"
         >
           {table}
         </span>

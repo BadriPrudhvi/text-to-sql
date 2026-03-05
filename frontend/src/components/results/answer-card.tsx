@@ -1,23 +1,46 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "motion/react";
+import { Copy, Check } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 interface AnswerCardProps {
   answer: string;
+  /** When true, suppress markdown tables (avoids duplicate when DataTable is already shown) */
+  hideTable?: boolean;
 }
 
-export function AnswerCard({ answer }: AnswerCardProps) {
+export function AnswerCard({ answer, hideTable }: AnswerCardProps) {
+  const [copied, setCopied] = useState(false);
+
   if (!answer) return null;
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(answer);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <motion.div
-      className="prose-sm max-w-none"
+      className="prose-sm max-w-none relative"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
+      <button
+        onClick={handleCopy}
+        className="absolute top-0 right-0 rounded-md p-1 text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
+        title="Copy answer"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-emerald-600" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </button>
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -50,22 +73,22 @@ export function AnswerCard({ answer }: AnswerCardProps) {
             </code>
           ),
           hr: () => <hr className="my-3 border-border" />,
-          table: ({ children }) => (
+          table: hideTable ? () => null : ({ children }) => (
             <div className="my-3 overflow-x-auto rounded-md border">
               <table className="w-full text-xs">{children}</table>
             </div>
           ),
-          thead: ({ children }) => (
+          thead: hideTable ? () => null : ({ children }) => (
             <thead className="bg-muted/50 border-b">{children}</thead>
           ),
-          tbody: ({ children }) => <tbody className="divide-y">{children}</tbody>,
-          tr: ({ children }) => <tr>{children}</tr>,
-          th: ({ children }) => (
+          tbody: hideTable ? () => null : ({ children }) => <tbody className="divide-y">{children}</tbody>,
+          tr: hideTable ? () => null : ({ children }) => <tr>{children}</tr>,
+          th: hideTable ? () => null : ({ children }) => (
             <th className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">
               {children}
             </th>
           ),
-          td: ({ children }) => (
+          td: hideTable ? () => null : ({ children }) => (
             <td className="px-3 py-2 whitespace-nowrap">{children}</td>
           ),
         }}

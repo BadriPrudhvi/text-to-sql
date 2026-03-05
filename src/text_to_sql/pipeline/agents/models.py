@@ -40,5 +40,6 @@ class AnalysisPlan(BaseModel):
         max_length=7,
     )
     synthesis_guidance: str = Field(
-        description="Instructions for how to synthesize results across all steps"
+        default="Synthesize the results from all steps into a clear, actionable answer.",
+        description="Instructions for how to synthesize results across all steps",
     )

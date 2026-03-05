@@ -6,6 +6,7 @@ import { SQLAccordion } from "@/components/results/sql-accordion";
 import { DataTable } from "@/components/results/data-table";
 import { ResultChart } from "@/components/results/result-chart";
 import { AnswerCard } from "@/components/results/answer-card";
+import { ReportCard } from "@/components/results/report-card";
 import { SourceTables } from "@/components/results/source-tables";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -116,7 +117,11 @@ function AssistantContent({
           <ResultChart data={queryResponse.result} />
         )}
 
-        {queryResponse?.answer && <AnswerCard answer={queryResponse.answer} />}
+        {queryResponse?.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
+          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+        ) : queryResponse?.answer ? (
+          <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse?.result?.length} />
+        ) : null}
 
         {queryResponse?.generated_sql && !isStreaming && (
           <SourceTables sql={queryResponse.generated_sql} />
@@ -162,7 +167,11 @@ function AssistantContent({
         {queryResponse.result && queryResponse.result.length > 0 && (
           <ResultChart data={queryResponse.result} />
         )}
-        {queryResponse.answer && <AnswerCard answer={queryResponse.answer} />}
+        {queryResponse.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
+          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+        ) : queryResponse.answer ? (
+          <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse.result?.length} />
+        ) : null}
         {queryResponse.generated_sql && (
           <SourceTables sql={queryResponse.generated_sql} />
         )}

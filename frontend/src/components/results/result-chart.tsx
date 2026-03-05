@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { BarChart3, PieChartIcon, Table2 } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, PieChartIcon, Table2, TrendingUp } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   BarChart,
   Bar,
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -33,11 +36,23 @@ function truncateLabel(label: string, max = MAX_LABEL_LENGTH): string {
   return label.slice(0, max - 1) + "…";
 }
 
-type ChartType = "bar" | "pie";
+type ChartType = "bar" | "pie" | "line";
 
 interface ColumnAnalysis {
   stringColumns: string[];
   numericColumns: string[];
+}
+
+const ID_PATTERNS = /(?:^id$|_id$|Id$|ID$|_pk$|_fk$|_key$)/;
+
+function looksLikeId(key: string, values: unknown[]): boolean {
+  if (ID_PATTERNS.test(key)) return true;
+  // All unique integers suggest a primary key / foreign key
+  if (values.length >= 2 && values.every((v) => Number.isInteger(Number(v)))) {
+    const unique = new Set(values.map(String));
+    if (unique.size === values.length) return true;
+  }
+  return false;
 }
 
 function analyzeColumns(data: Record<string, unknown>[]): ColumnAnalysis {
@@ -58,13 +73,40 @@ function analyzeColumns(data: Record<string, unknown>[]): ColumnAnalysis {
     );
 
     if (allNumeric) {
-      numericColumns.push(key);
+      // Skip ID/key columns — they're not meaningful metrics
+      if (looksLikeId(key, nonNullValues)) {
+        stringColumns.push(key);
+      } else {
+        numericColumns.push(key);
+      }
     } else {
       stringColumns.push(key);
     }
   }
 
   return { stringColumns, numericColumns };
+}
+
+const DATE_PATTERNS = [
+  /^\d{4}-\d{2}-\d{2}/,
+  /^\d{1,2}\/\d{1,2}\/\d{2,4}/,
+  /^\d{4}\/\d{2}\/\d{2}/,
+];
+
+function isDateLike(value: unknown): boolean {
+  if (value == null) return false;
+  const str = String(value).trim();
+  return DATE_PATTERNS.some((p) => p.test(str));
+}
+
+function hasDateColumn(data: Record<string, unknown>[], stringColumns: string[]): string | null {
+  for (const col of stringColumns) {
+    const nonNull = data.filter((r) => r[col] != null).slice(0, 5);
+    if (nonNull.length > 0 && nonNull.every((r) => isDateLike(r[col]))) {
+      return col;
+    }
+  }
+  return null;
 }
 
 function detectChartType(
@@ -77,13 +119,20 @@ function detectChartType(
   if (stringColumns.length !== 1) return null;
   if (numericColumns.length < 1 || numericColumns.length > 3) return null;
 
-  // Default: prefer bar for most data, allow pie only for small sets with 1 metric
+  if (hasDateColumn(data, stringColumns)) return "line";
   if (numericColumns.length === 1 && data.length <= 8) return "pie";
   return "bar";
 }
 
 function isPieViable(analysis: ColumnAnalysis, dataLength: number): boolean {
   return analysis.numericColumns.length === 1 && dataLength <= 8;
+}
+
+function isLineViable(analysis: ColumnAnalysis, dataLength: number, data?: Record<string, unknown>[]): boolean {
+  if (analysis.numericColumns.length < 1 || dataLength < 2) return false;
+  if (!data) return false;
+  // Line charts only make sense for ordered data (dates or large sequential datasets)
+  return hasDateColumn(data, analysis.stringColumns) !== null || dataLength > 6;
 }
 
 // Custom tooltip for both chart types
@@ -176,12 +225,16 @@ export function ResultChart({ data }: ResultChartProps) {
   const analysis = useMemo(() => analyzeColumns(data), [data]);
   const defaultType = useMemo(() => detectChartType(data, analysis), [data, analysis]);
   const pieViable = useMemo(() => isPieViable(analysis, data.length), [analysis, data.length]);
+  const lineViable = useMemo(() => isLineViable(analysis, data.length, data), [analysis, data]);
 
   const [chartType, setChartType] = useState<ChartType | "hidden">(defaultType ?? "hidden");
+  const [tablePage, setTablePage] = useState(0);
+  const TABLE_PAGE_SIZE = 10;
 
   // Sync default when data changes
-  useMemo(() => {
+  useEffect(() => {
     setChartType(defaultType ?? "hidden");
+    setTablePage(0);
   }, [defaultType]);
 
   if (!defaultType) return null;
@@ -211,18 +264,49 @@ export function ResultChart({ data }: ResultChartProps) {
       transition={{ duration: 0.3 }}
     >
       <div className="flex justify-end gap-1 mb-1">
-        {showChart && pieViable && (
-          <button
-            onClick={() => setChartType(chartType === "pie" ? "bar" : "pie")}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title={chartType === "pie" ? "Switch to bar chart" : "Switch to pie chart"}
-          >
-            {chartType === "pie" ? (
+        {showChart && (
+          <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+            <button
+              onClick={() => setChartType("bar")}
+              className={cn(
+                "rounded p-1 transition-colors",
+                chartType === "bar"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Bar chart"
+            >
               <BarChart3 className="h-3.5 w-3.5" />
-            ) : (
-              <PieChartIcon className="h-3.5 w-3.5" />
+            </button>
+            {lineViable && (
+              <button
+                onClick={() => setChartType("line")}
+                className={cn(
+                  "rounded p-1 transition-colors",
+                  chartType === "line"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                title="Line chart"
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+              </button>
             )}
-          </button>
+            {pieViable && (
+              <button
+                onClick={() => setChartType("pie")}
+                className={cn(
+                  "rounded p-1 transition-colors",
+                  chartType === "pie"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                title="Pie chart"
+              >
+                <PieChartIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         )}
         <button
           onClick={() => setChartType(showChart ? "hidden" : (defaultType ?? "bar"))}
@@ -238,10 +322,91 @@ export function ResultChart({ data }: ResultChartProps) {
         </button>
       </div>
 
+      {!showChart && (() => {
+        const totalPages = Math.ceil(chartData.length / TABLE_PAGE_SIZE);
+        const pageRows = chartData.slice(tablePage * TABLE_PAGE_SIZE, (tablePage + 1) * TABLE_PAGE_SIZE);
+        return (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  {[labelKey, ...valueKeys].map((col) => (
+                    <th key={col} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {pageRows.map((row, i) => (
+                  <tr key={i} className="hover:bg-muted/50 transition-colors">
+                    {[labelKey, ...valueKeys].map((col) => (
+                      <td key={col} className="px-3 py-1.5 whitespace-nowrap">
+                        {typeof row[col] === "number" ? (row[col] as number).toLocaleString() : String(row[col] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-3 py-1.5 border-t">
+                <p className="text-[10px] text-muted-foreground">
+                  Page {tablePage + 1} of {totalPages}
+                </p>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setTablePage((p) => p - 1)}
+                    disabled={tablePage === 0}
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setTablePage((p) => p + 1)}
+                    disabled={tablePage >= totalPages - 1}
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {showChart && (
         <div className="h-[280px] w-full rounded-md border border-transparent transition-colors hover:border-foreground/10 p-1">
           <ResponsiveContainer width="100%" height="100%">
-            {chartType === "pie" ? (
+            {chartType === "line" ? (
+              <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis
+                  dataKey={labelKey}
+                  tick={{ fontSize: 11 }}
+                  interval={chartData.length > 15 ? Math.ceil(chartData.length / 10) - 1 : 0}
+                  tickFormatter={(v: string) => truncateLabel(v, chartData.length > 15 ? 10 : 12)}
+                  angle={chartData.length > 6 ? -45 : 0}
+                  textAnchor={chartData.length > 6 ? "end" : "middle"}
+                  height={chartData.length > 6 ? 80 : 35}
+                />
+                <YAxis tick={{ fontSize: 11 }} width={50} />
+                <Tooltip content={<ChartTooltip />} />
+                {valueKeys.length > 1 && <Legend content={<CompactLegend />} />}
+                {valueKeys.map((key, idx) => (
+                  <Line
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: CHART_COLORS[idx % CHART_COLORS.length] }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+              </LineChart>
+            ) : chartType === "pie" ? (
               <PieChart>
                 <Pie
                   data={chartData}
@@ -272,11 +437,11 @@ export function ResultChart({ data }: ResultChartProps) {
                 <XAxis
                   dataKey={labelKey}
                   tick={{ fontSize: 11 }}
-                  interval={0}
-                  tickFormatter={(v: string) => truncateLabel(v)}
-                  angle={chartData.length > 4 ? -35 : 0}
+                  interval={chartData.length > 15 ? Math.ceil(chartData.length / 10) - 1 : 0}
+                  tickFormatter={(v: string) => truncateLabel(v, chartData.length > 15 ? 10 : MAX_LABEL_LENGTH)}
+                  angle={chartData.length > 4 ? -45 : 0}
                   textAnchor={chartData.length > 4 ? "end" : "middle"}
-                  height={chartData.length > 4 ? 70 : 35}
+                  height={chartData.length > 4 ? 80 : 35}
                 />
                 <YAxis tick={{ fontSize: 11 }} width={50} />
                 <Tooltip content={<ChartTooltip />} />

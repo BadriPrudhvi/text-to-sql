@@ -35,7 +35,7 @@ export function ChatPage() {
     updateLastAssistantMessage,
   } = useChat(activeSessionId);
 
-  const { tables } = useSchema();
+  const { tables, isLoading: schemaLoading } = useSchema();
 
   // Approval dialog state
   const [approvalState, setApprovalState] = useState<{
@@ -65,6 +65,13 @@ export function ChatPage() {
       if (sid) sendMessage(content, sid);
     },
     [activeSessionId, newSession, sendMessage]
+  );
+
+  const handleSchemaTableClick = useCallback(
+    (tableName: string) => {
+      handleSend(`Show me the first 5 rows from ${tableName}`);
+    },
+    [handleSend]
   );
 
   const handleApprovalNeeded = useCallback(
@@ -106,6 +113,9 @@ export function ChatPage() {
         onNewSession={newSession}
         onSwitchSession={switchSession}
         onDeleteSession={deleteSession}
+        schemaTables={tables}
+        schemaLoading={schemaLoading}
+        onSchemaTableClick={handleSchemaTableClick}
       />
       <SidebarInset>
         {/* Header */}
