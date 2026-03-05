@@ -13,7 +13,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import interrupt
 
 from text_to_sql.db.base import DatabaseBackend
-from text_to_sql.llm.prompts import FEW_SHOT_EXAMPLES, SQL_AGENT_SYSTEM_PROMPT
+from text_to_sql.llm.prompts import SQL_AGENT_SYSTEM_PROMPT, get_few_shot_examples
 from text_to_sql.pipeline.agents import extract_user_question
 from text_to_sql.pipeline.tools import create_run_query_tool
 from text_to_sql.schema.cache import SchemaCache
@@ -123,7 +123,7 @@ def build_pipeline_graph(
                 dialect=dialect,
                 schema_context=context,
                 top_k=5,
-                few_shot_examples=FEW_SHOT_EXAMPLES,
+                few_shot_examples=get_few_shot_examples(dialect),
             )
         )
         # Remove any prior SystemMessages to avoid "multiple non-consecutive
