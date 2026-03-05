@@ -57,3 +57,48 @@ def create_chat_model(settings: Settings) -> BaseChatModel:
         logger.info("llm_fallback_chain", chain=[type(m).__name__ for m in models])
 
     return primary
+
+
+def create_light_chat_model(settings: Settings) -> BaseChatModel | None:
+    """Create a lightweight chat model for classification and simple SQL tasks.
+
+    Returns None if light_model is not configured (caller should fall back to primary model).
+    """
+    if not settings.light_model:
+        return None
+
+    # Find an API key to use — try Google first (since user specified Gemini), then others
+    providers = [
+        (settings.google_api_key, "google_genai"),
+        (settings.anthropic_api_key, "anthropic"),
+        (settings.openai_api_key, "openai"),
+    ]
+
+    for api_key, provider in providers:
+        key_value = api_key.get_secret_value()
+        if not key_value or len(key_value) < 10:
+            continue
+        try:
+            model = init_chat_model(
+                settings.light_model,
+                model_provider=provider,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+                api_key=key_value,
+            )
+            logger.info(
+                "light_model_created",
+                provider=provider,
+                model=settings.light_model,
+            )
+            return model
+        except Exception:
+            logger.warning(
+                "light_model_skipped",
+                provider=provider,
+                model=settings.light_model,
+                exc_info=True,
+            )
+
+    logger.warning("light_model_not_created", model=settings.light_model)
+    return None

@@ -13,11 +13,13 @@ logger = structlog.get_logger()
 
 class BigQueryBackend:
 
-    def __init__(self, project: str, dataset: str, credentials_path: str = "") -> None:
+    def __init__(self, project: str, dataset: str, credentials_path: str = "", max_concurrent: int = 15) -> None:
         self._project = project
         self._dataset = dataset
         self._credentials_path = credentials_path
+        self._max_concurrent = max_concurrent
         self._client: Any = None
+        self._semaphore: asyncio.Semaphore | None = None
 
     async def connect(self) -> None:
         from google.cloud import bigquery
@@ -34,7 +36,8 @@ class BigQueryBackend:
 
         loop = asyncio.get_running_loop()
         self._client = await loop.run_in_executor(None, _create_client)
-        logger.info("bigquery_connected", project=self._project, dataset=self._dataset)
+        self._semaphore = asyncio.Semaphore(self._max_concurrent)
+        logger.info("bigquery_connected", project=self._project, dataset=self._dataset, max_concurrent=self._max_concurrent)
 
     async def close(self) -> None:
         if self._client:
@@ -71,8 +74,10 @@ class BigQueryBackend:
             result = self._client.query(query)
             return [dict(row) for row in result]
 
-        loop = asyncio.get_running_loop()
-        rows = await loop.run_in_executor(None, _run_query)
+        assert self._semaphore is not None
+        async with self._semaphore:
+            loop = asyncio.get_running_loop()
+            rows = await loop.run_in_executor(None, _run_query)
 
         tables_map: dict[str, TableInfo] = {}
         for row in rows:
@@ -105,7 +110,7 @@ class BigQueryBackend:
         return tables
 
     async def validate_sql(self, sql: str) -> list[str]:
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="bigquery")
         if errors:
             return errors
 
@@ -119,13 +124,15 @@ class BigQueryBackend:
             except Exception as e:
                 return [str(e)]
 
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _dry_run)
+        assert self._semaphore is not None
+        async with self._semaphore:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, _dry_run)
 
     async def execute_sql(
         self, sql: str, timeout_seconds: float | None = None
     ) -> list[dict[str, Any]]:
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="bigquery")
         if errors:
             raise ValueError(errors[0])
 
@@ -138,8 +145,16 @@ class BigQueryBackend:
             result = self._client.query(sql, job_config=job_config)
             return [dict(row) for row in result]
 
-        loop = asyncio.get_running_loop()
-        rows = await loop.run_in_executor(None, _execute)
+        assert self._semaphore is not None
+        async with self._semaphore:
+            loop = asyncio.get_running_loop()
+            if timeout_seconds:
+                rows = await asyncio.wait_for(
+                    loop.run_in_executor(None, _execute),
+                    timeout=timeout_seconds + 5,
+                )
+            else:
+                rows = await loop.run_in_executor(None, _execute)
         logger.info("bigquery_query_executed", row_count=len(rows))
         return rows
 

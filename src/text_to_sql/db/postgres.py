@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -15,13 +16,24 @@ logger = structlog.get_logger()
 class PostgresBackend:
     """PostgreSQL database backend using SQLAlchemy async."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, pool_size: int = 10, max_overflow: int = 20, pool_timeout: int = 30, pool_recycle: int = 1800) -> None:
         self._url = url
+        self._pool_size = pool_size
+        self._max_overflow = max_overflow
+        self._pool_timeout = pool_timeout
+        self._pool_recycle = pool_recycle
         self._engine: AsyncEngine | None = None
 
     async def connect(self) -> None:
-        self._engine = create_async_engine(self._url, echo=False)
-        logger.info("postgres_connected", url=self._url.split("@")[-1])
+        self._engine = create_async_engine(
+            self._url,
+            echo=False,
+            pool_size=self._pool_size,
+            max_overflow=self._max_overflow,
+            pool_timeout=self._pool_timeout,
+            pool_recycle=self._pool_recycle,
+        )
+        logger.info("postgres_connected", url=self._url.split("@")[-1], pool_size=self._pool_size, max_overflow=self._max_overflow)
 
     async def close(self) -> None:
         if self._engine:
@@ -83,7 +95,7 @@ class PostgresBackend:
 
     async def validate_sql(self, sql: str) -> list[str]:
         assert self._engine is not None
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="postgres")
         if errors:
             return errors
 
@@ -99,16 +111,22 @@ class PostgresBackend:
         self, sql: str, timeout_seconds: float | None = None
     ) -> list[dict[str, Any]]:
         assert self._engine is not None
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="postgres")
         if errors:
             raise ValueError(errors[0])
 
-        async with self._engine.connect() as conn:
-            if timeout_seconds:
-                timeout_ms = int(timeout_seconds * 1000)
-                await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
-            result = await conn.exec_driver_sql(sql)
-            rows = [dict(row._mapping) for row in result]
+        async def _run() -> list[dict[str, Any]]:
+            async with self._engine.connect() as conn:
+                if timeout_seconds:
+                    timeout_ms = int(timeout_seconds * 1000)
+                    await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
+                result = await conn.exec_driver_sql(sql)
+                return [dict(row._mapping) for row in result]
+
+        if timeout_seconds:
+            rows = await asyncio.wait_for(_run(), timeout=timeout_seconds + 5)
+        else:
+            rows = await _run()
 
         logger.info("postgres_query_executed", row_count=len(rows))
         return rows

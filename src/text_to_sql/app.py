@@ -43,6 +43,11 @@ def create_app() -> FastAPI:
         schema_cache = SchemaCache(ttl_seconds=settings.schema_cache_ttl_seconds)
         chat_model = create_chat_model(settings)
 
+        # Create lightweight model for classification and simple SQL
+        from text_to_sql.llm.router import create_light_chat_model
+
+        light_chat_model = create_light_chat_model(settings)
+
         # Create stores (in-memory or SQLite based on config)
         stores = await create_stores(
             settings.storage_type, settings.storage_sqlite_path
@@ -94,6 +99,7 @@ def create_app() -> FastAPI:
             db_query_timeout_seconds=settings.db_query_timeout_seconds,
             analytical_max_plan_steps=settings.analytical_max_plan_steps,
             analytical_max_synthesis_attempts=settings.analytical_max_synthesis_attempts,
+            light_chat_model=light_chat_model,
         )
 
         orchestrator = PipelineOrchestrator(
@@ -136,7 +142,11 @@ def create_app() -> FastAPI:
         description="Enterprise-grade text-to-SQL with LangGraph orchestration, multi-turn conversations, SSE streaming, self-correction, caching, and observability",
         lifespan=combined_lifespan,
     )
-    app.include_router(api_router, prefix="/api")
+    # Health check available at both /api/health (unversioned) and /api/v1/health
+    from text_to_sql.api.health import router as health_router_unversioned
+
+    app.include_router(health_router_unversioned, prefix="/api", tags=["health"])
+    app.include_router(api_router, prefix="/api/v1")
     app.mount("/mcp", mcp_http_app)
 
     return app

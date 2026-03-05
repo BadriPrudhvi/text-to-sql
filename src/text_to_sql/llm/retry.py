@@ -14,6 +14,24 @@ from tenacity import (
 logger = structlog.get_logger()
 
 
+def _build_retryable_exceptions() -> tuple[type[BaseException], ...]:
+    """Build tuple of retryable exception types, including Google API errors if available."""
+    base: list[type[BaseException]] = [ConnectionError, TimeoutError, OSError]
+
+    try:
+        from google.api_core.exceptions import (
+            DeadlineExceeded,
+            InternalServerError,
+            ResourceExhausted,
+            ServiceUnavailable,
+        )
+        base.extend([ResourceExhausted, ServiceUnavailable, DeadlineExceeded, InternalServerError])
+    except ImportError:
+        pass
+
+    return tuple(base)
+
+
 def create_invoke_with_retry(
     max_attempts: int = 3,
     min_wait: int = 2,
@@ -22,13 +40,14 @@ def create_invoke_with_retry(
     """Create a retrying wrapper for LLM invocations.
 
     Returns an async function that wraps model.ainvoke() with exponential backoff
-    retry on transient errors (connection, timeout).
+    retry on transient errors (connection, timeout, rate limits).
     """
+    retryable = _build_retryable_exceptions()
 
     @retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        retry=retry_if_exception_type(retryable),
         reraise=True,
         before_sleep=lambda retry_state: logger.warning(
             "llm_retry",

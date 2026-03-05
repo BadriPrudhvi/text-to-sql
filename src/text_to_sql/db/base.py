@@ -33,11 +33,17 @@ _FORBIDDEN_KEYWORDS = frozenset(
     {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE", "GRANT", "REVOKE"}
 )
 
+_DIALECT_FORBIDDEN: dict[str, frozenset[str]] = {
+    "postgres": frozenset({"MERGE", "COPY", "CALL", "EXECUTE", "DO", "LISTEN", "NOTIFY"}),
+    "bigquery": frozenset({"MERGE", "EXPORT", "LOAD", "CALL", "ASSERT"}),
+    "sqlite": frozenset({"ATTACH", "DETACH", "REPLACE", "REINDEX"}),
+}
+
 _SQL_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_LINE_COMMENT_RE = re.compile(r"--.*?(\n|$)")
 
 
-def check_read_only(sql: str) -> list[str]:
+def check_read_only(sql: str, *, dialect: str | None = None) -> list[str]:
     """Check that SQL is a safe read-only query. Returns list of errors."""
     # Strip SQL comments that could hide forbidden keywords
     normalized = _SQL_COMMENT_RE.sub(" ", sql)
@@ -52,10 +58,15 @@ def check_read_only(sql: str) -> list[str]:
     if ";" in stripped:
         return ["Multiple SQL statements are not allowed"]
 
+    # Combine base + dialect-specific forbidden keywords
+    forbidden = _FORBIDDEN_KEYWORDS
+    if dialect and dialect in _DIALECT_FORBIDDEN:
+        forbidden = _FORBIDDEN_KEYWORDS | _DIALECT_FORBIDDEN[dialect]
+
     # Check all tokens for forbidden keywords (not just the first word)
     words = normalized.upper().split()
     for word in words:
-        if word in _FORBIDDEN_KEYWORDS:
+        if word in forbidden:
             return [f"Forbidden SQL operation: {word}. Only SELECT/WITH queries are allowed."]
 
     # Only allow queries starting with SELECT or WITH
@@ -85,7 +96,24 @@ def clean_llm_sql(sql: str) -> str:
 
 _SAFE_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+_POSTGRES_IDENTIFIER_RE = re.compile(
+    r'^("([^"]+)"'                    # quoted identifier
+    r'|[a-zA-Z_$][a-zA-Z0-9_$]*)'    # unquoted (allows $)
+    r'(\.'                            # optional .schema
+    r'("([^"]+)"'
+    r'|[a-zA-Z_$][a-zA-Z0-9_$]*))*$'
+)
+_BIGQUERY_IDENTIFIER_RE = re.compile(
+    r'^(`[a-zA-Z0-9_][a-zA-Z0-9_.:-]*`'  # backtick-quoted (allows hyphens, dots, colons)
+    r'|[a-zA-Z_][a-zA-Z0-9_]*'           # unquoted simple
+    r'(\.[a-zA-Z_][a-zA-Z0-9_]*)*)$'     # optional dot-separated parts
+)
 
-def validate_identifier(name: str) -> bool:
-    """Check that a SQL identifier (table/column name) is safe."""
+
+def validate_identifier(name: str, dialect: str | None = None) -> bool:
+    """Check that a SQL identifier (table/column name) is safe for the given dialect."""
+    if dialect == "postgres":
+        return bool(_POSTGRES_IDENTIFIER_RE.match(name))
+    if dialect == "bigquery":
+        return bool(_BIGQUERY_IDENTIFIER_RE.match(name))
     return bool(_SAFE_IDENTIFIER_RE.match(name))

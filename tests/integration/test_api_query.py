@@ -8,7 +8,7 @@ from httpx import AsyncClient
 async def test_submit_query_auto_executes(client: AsyncClient) -> None:
     """Valid SQL should auto-execute and return results."""
     response = await client.post(
-        "/api/query",
+        "/api/v1/query",
         json={"question": "How many users are there?"},
     )
     assert response.status_code == 200
@@ -25,7 +25,7 @@ async def test_submit_query_auto_executes(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_submit_query_empty_question(client: AsyncClient) -> None:
     response = await client.post(
-        "/api/query",
+        "/api/v1/query",
         json={"question": ""},
     )
     assert response.status_code == 422
