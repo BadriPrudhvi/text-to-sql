@@ -70,6 +70,19 @@ def test_pool_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.bigquery_max_concurrent == 30
 
 
+def test_light_model_defaults_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    settings = Settings(_env_file=None)
+    assert settings.light_model == ""
+
+
+def test_light_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("LIGHT_MODEL", "gemini-3-1-flash-lite")
+    settings = Settings(_env_file=None)
+    assert settings.light_model == "gemini-3-1-flash-lite"
+
+
 def test_all_api_keys_default_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

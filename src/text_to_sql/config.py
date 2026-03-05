@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     default_model: str = "claude-opus-4-6"
     secondary_model: str = "gemini-3-pro-preview"
     fallback_model: str = "gpt-4o"
+    light_model: str = ""  # Fast/cheap model for classification and simple SQL. Falls back to default_model if empty.
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0
 

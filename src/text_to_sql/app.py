@@ -43,6 +43,11 @@ def create_app() -> FastAPI:
         schema_cache = SchemaCache(ttl_seconds=settings.schema_cache_ttl_seconds)
         chat_model = create_chat_model(settings)
 
+        # Create lightweight model for classification and simple SQL
+        from text_to_sql.llm.router import create_light_chat_model
+
+        light_chat_model = create_light_chat_model(settings)
+
         # Create stores (in-memory or SQLite based on config)
         stores = await create_stores(
             settings.storage_type, settings.storage_sqlite_path
@@ -94,6 +99,7 @@ def create_app() -> FastAPI:
             db_query_timeout_seconds=settings.db_query_timeout_seconds,
             analytical_max_plan_steps=settings.analytical_max_plan_steps,
             analytical_max_synthesis_attempts=settings.analytical_max_synthesis_attempts,
+            light_chat_model=light_chat_model,
         )
 
         orchestrator = PipelineOrchestrator(

@@ -59,6 +59,7 @@ def build_pipeline_graph(
     db_query_timeout_seconds: float | None = None,
     analytical_max_plan_steps: int = 7,
     analytical_max_synthesis_attempts: int = 1,
+    light_chat_model: BaseChatModel | None = None,
 ) -> StateGraph:
     """Build the LangGraph StateGraph for text-to-SQL agent pipeline."""
     from text_to_sql.llm.retry import create_invoke_with_retry
@@ -70,6 +71,9 @@ def build_pipeline_graph(
     from text_to_sql.pipeline.agents.executor import create_execute_plan_step_node
     from text_to_sql.pipeline.agents.planner import create_plan_analysis_node
 
+    # Determine effective light model: use light_chat_model if provided, else fall back to chat_model
+    light_model = light_chat_model if light_chat_model is not None else chat_model
+
     schema_service = SchemaDiscoveryService(
         db_backend, schema_cache,
         include_tables=include_tables,
@@ -77,7 +81,7 @@ def build_pipeline_graph(
     )
     schema_budget = int(context_max_tokens * context_schema_budget_pct)
     run_query_tool = create_run_query_tool(db_backend)
-    model_with_tools = chat_model.bind_tools([run_query_tool])
+    model_with_tools = light_model.bind_tools([run_query_tool])
     invoke_with_retry = create_invoke_with_retry(
         max_attempts=llm_retry_attempts,
         min_wait=llm_retry_min_wait,
@@ -103,7 +107,7 @@ def build_pipeline_graph(
             if user_question:
                 if schema_selection_mode == "llm":
                     tables = await selector.select_by_llm(
-                        user_question, tables, chat_model,
+                        user_question, tables, light_model,
                         max_tables=schema_max_selected_tables,
                     )
                 else:
@@ -299,12 +303,13 @@ def build_pipeline_graph(
         }
 
     # Create analytical agent nodes
-    classify_query = create_classify_query_node(chat_model, invoke_with_retry)
+    # Light model for classification and step execution; heavy model for planning and synthesis
+    classify_query = create_classify_query_node(light_model, invoke_with_retry)
     plan_analysis = create_plan_analysis_node(
         chat_model, invoke_with_retry, analytical_max_plan_steps
     )
     execute_plan_step = create_execute_plan_step_node(
-        chat_model, db_backend, invoke_with_retry, dialect, db_query_timeout_seconds
+        light_model, db_backend, invoke_with_retry, dialect, db_query_timeout_seconds
     )
     synthesize_analysis = create_synthesize_analysis_node(
         chat_model, invoke_with_retry
@@ -420,6 +425,7 @@ def compile_pipeline(
     db_query_timeout_seconds: float | None = None,
     analytical_max_plan_steps: int = 7,
     analytical_max_synthesis_attempts: int = 1,
+    light_chat_model: BaseChatModel | None = None,
 ):
     """Build and compile the pipeline graph with optional checkpointer."""
     builder = build_pipeline_graph(
@@ -438,6 +444,7 @@ def compile_pipeline(
         db_query_timeout_seconds=db_query_timeout_seconds,
         analytical_max_plan_steps=analytical_max_plan_steps,
         analytical_max_synthesis_attempts=analytical_max_synthesis_attempts,
+        light_chat_model=light_chat_model,
     )
     if checkpointer is None:
         checkpointer = MemorySaver()
