@@ -15,13 +15,24 @@ logger = structlog.get_logger()
 class PostgresBackend:
     """PostgreSQL database backend using SQLAlchemy async."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, pool_size: int = 10, max_overflow: int = 20, pool_timeout: int = 30, pool_recycle: int = 1800) -> None:
         self._url = url
+        self._pool_size = pool_size
+        self._max_overflow = max_overflow
+        self._pool_timeout = pool_timeout
+        self._pool_recycle = pool_recycle
         self._engine: AsyncEngine | None = None
 
     async def connect(self) -> None:
-        self._engine = create_async_engine(self._url, echo=False)
-        logger.info("postgres_connected", url=self._url.split("@")[-1])
+        self._engine = create_async_engine(
+            self._url,
+            echo=False,
+            pool_size=self._pool_size,
+            max_overflow=self._max_overflow,
+            pool_timeout=self._pool_timeout,
+            pool_recycle=self._pool_recycle,
+        )
+        logger.info("postgres_connected", url=self._url.split("@")[-1], pool_size=self._pool_size, max_overflow=self._max_overflow)
 
     async def close(self) -> None:
         if self._engine:

@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     postgres_url: str = ""
     sqlite_url: str = "sqlite+aiosqlite:///./chinook.db"
 
+    # Connection pool — PostgreSQL
+    postgres_pool_size: int = 10
+    postgres_max_overflow: int = 20
+    postgres_pool_timeout: int = 30
+    postgres_pool_recycle: int = 1800
+
+    # Connection pool — SQLite
+    sqlite_pool_size: int = 5
+    sqlite_max_overflow: int = 5
+
+    # Connection pool — BigQuery
+    bigquery_max_concurrent: int = 15
+
     # LLM Models
     default_model: str = "claude-opus-4-6"
     secondary_model: str = "gemini-3-pro-preview"

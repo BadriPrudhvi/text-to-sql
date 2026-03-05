@@ -49,6 +49,27 @@ def test_secret_str_hides_value(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.anthropic_api_key.get_secret_value() == "super-secret"
 
 
+def test_pool_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    settings = Settings(_env_file=None)
+    assert settings.postgres_pool_size == 10
+    assert settings.postgres_max_overflow == 20
+    assert settings.postgres_pool_timeout == 30
+    assert settings.postgres_pool_recycle == 1800
+    assert settings.sqlite_pool_size == 5
+    assert settings.sqlite_max_overflow == 5
+    assert settings.bigquery_max_concurrent == 15
+
+
+def test_pool_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("POSTGRES_POOL_SIZE", "20")
+    monkeypatch.setenv("BIGQUERY_MAX_CONCURRENT", "30")
+    settings = Settings(_env_file=None)
+    assert settings.postgres_pool_size == 20
+    assert settings.bigquery_max_concurrent == 30
+
+
 def test_all_api_keys_default_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

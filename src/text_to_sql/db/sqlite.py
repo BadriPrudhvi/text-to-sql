@@ -18,14 +18,24 @@ logger = structlog.get_logger()
 class SqliteBackend:
     """SQLite database backend using SQLAlchemy async + aiosqlite."""
 
-    def __init__(self, url: str, metadata_path: str = "") -> None:
+    def __init__(self, url: str, metadata_path: str = "", pool_size: int = 5, max_overflow: int = 5) -> None:
         self._url = url
         self._metadata_path = metadata_path
+        self._pool_size = pool_size
+        self._max_overflow = max_overflow
         self._engine: AsyncEngine | None = None
 
+    def _is_memory_db(self) -> bool:
+        """Check if this is an in-memory SQLite database (uses StaticPool, no pool config)."""
+        return ":memory:" in self._url or self._url.endswith("sqlite+aiosqlite://")
+
     async def connect(self) -> None:
-        self._engine = create_async_engine(self._url, echo=False)
-        logger.info("sqlite_connected", url=self._url)
+        kwargs: dict[str, Any] = {"echo": False}
+        if not self._is_memory_db():
+            kwargs["pool_size"] = self._pool_size
+            kwargs["max_overflow"] = self._max_overflow
+        self._engine = create_async_engine(self._url, **kwargs)
+        logger.info("sqlite_connected", url=self._url, pool_size=self._pool_size)
 
     async def close(self) -> None:
         if self._engine:
