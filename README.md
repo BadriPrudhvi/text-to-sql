@@ -20,6 +20,10 @@ Supports multi-turn conversations, real-time streaming, automatic self-correctio
 - **Dual interface** — REST API (FastAPI) and MCP tools served from the same process
 - **Read-only SQL guard** — Blocks `INSERT`, `UPDATE`, `DELETE`, `DROP`, and other mutating statements at the execution layer
 - **Schema-aware generation** — Automatic schema discovery with TTL-based caching, context budgeting, and dynamic table selection (keyword or LLM-based)
+- **Data export** — Download query results as CSV or JSON, SQL queries as `.sql` files, and analytical reports as Markdown
+- **Rich visualizations** — Auto-detected bar, line, and pie charts with a chart type picker. Line charts auto-selected for time-series data
+- **Analytical report cards** — Multi-step analytical queries render structured reports with KPI cards, per-step charts, and synthesized narrative
+- **Schema browser** — Searchable database schema explorer in the sidebar with table/column details, dot-prefix grouping for large schemas, and click-to-query
 - **Observability** — Structured logging, pipeline metrics, health endpoint, optional LangSmith tracing, and per-IP rate limiting
 
 ## Architecture
@@ -403,9 +407,15 @@ tests/
 frontend/                     # Next.js chatbot UI
 ├── src/
 │   ├── app/              # Root layout and page
-│   ├── components/       # Chat, pipeline, results, approval, session UI
-│   ├── hooks/            # SSE streaming, chat state, session management
-│   └── lib/              # API client, types, constants
+│   ├── components/
+│   │   ├── chat/         # Chat page, message bubbles, input bar
+│   │   ├── pipeline/     # Pipeline stepper with timeline visualization
+│   │   ├── results/      # Data table (with export), charts (bar/line/pie),
+│   │   │                 #   SQL accordion, report card, answer card
+│   │   ├── approval/     # SQL review/edit/approve dialog
+│   │   └── session/      # Session sidebar, schema browser
+│   ├── hooks/            # SSE streaming, chat state, session, schema
+│   └── lib/              # API client, types, constants, export utilities
 ├── next.config.ts        # API proxy to backend (port 8000)
 └── package.json
 ```
