@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -234,11 +235,30 @@ def build_pipeline_graph(
             writer({"event": "query_executed", "row_count": len(result)})
             tool_msg = ToolMessage(content=result_json, tool_call_id=tool_call_id)
             return {"messages": [tool_msg], "result": result}
+        except asyncio.TimeoutError:
+            error = "Query timed out — consider adding filters or reducing the result set with LIMIT"
+            logger.error("graph_sql_timeout", sql=sql)
+            writer({"event": "query_execution_failed", "error": error})
+            error_msg = ToolMessage(content=f"Error: {error}", tool_call_id=tool_call_id)
+            return {"messages": [error_msg], "error": error}
+        except ValueError as e:
+            error = f"SQL validation error: {e}"
+            logger.error("graph_sql_validation_error", error=str(e))
+            writer({"event": "query_execution_failed", "error": error})
+            error_msg = ToolMessage(content=f"Error: {error}", tool_call_id=tool_call_id)
+            return {"messages": [error_msg], "error": error}
         except Exception as e:
+            error_str = str(e).lower()
+            if "syntax" in error_str or "parse" in error_str:
+                error = f"SQL syntax error: {e}"
+            elif "connection" in error_str or "connect" in error_str:
+                error = f"Database connection error — please retry: {e}"
+            else:
+                error = f"Query execution failed: {e}"
             logger.error("graph_sql_execution_failed", error=str(e))
-            writer({"event": "query_execution_failed", "error": str(e)})
-            error_msg = ToolMessage(content=f"Error: {e}", tool_call_id=tool_call_id)
-            return {"messages": [error_msg], "error": "Query execution failed."}
+            writer({"event": "query_execution_failed", "error": error})
+            error_msg = ToolMessage(content=f"Error: {error}", tool_call_id=tool_call_id)
+            return {"messages": [error_msg], "error": error}
 
     async def validate_result(state: SQLAgentState) -> dict:
         """Validate query results and feed warnings back to LLM for self-correction."""
