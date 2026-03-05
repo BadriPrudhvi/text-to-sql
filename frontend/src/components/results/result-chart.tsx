@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { BarChart3, PieChartIcon, Table2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -212,7 +212,7 @@ export function ResultChart({ data }: ResultChartProps) {
   const [chartType, setChartType] = useState<ChartType | "hidden">(defaultType ?? "hidden");
 
   // Sync default when data changes
-  useMemo(() => {
+  useEffect(() => {
     setChartType(defaultType ?? "hidden");
   }, [defaultType]);
 
