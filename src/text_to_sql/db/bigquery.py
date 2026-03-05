@@ -148,7 +148,13 @@ class BigQueryBackend:
         assert self._semaphore is not None
         async with self._semaphore:
             loop = asyncio.get_running_loop()
-            rows = await loop.run_in_executor(None, _execute)
+            if timeout_seconds:
+                rows = await asyncio.wait_for(
+                    loop.run_in_executor(None, _execute),
+                    timeout=timeout_seconds + 5,
+                )
+            else:
+                rows = await loop.run_in_executor(None, _execute)
         logger.info("bigquery_query_executed", row_count=len(rows))
         return rows
 

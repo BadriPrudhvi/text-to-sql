@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -114,12 +115,18 @@ class PostgresBackend:
         if errors:
             raise ValueError(errors[0])
 
-        async with self._engine.connect() as conn:
-            if timeout_seconds:
-                timeout_ms = int(timeout_seconds * 1000)
-                await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
-            result = await conn.exec_driver_sql(sql)
-            rows = [dict(row._mapping) for row in result]
+        async def _run() -> list[dict[str, Any]]:
+            async with self._engine.connect() as conn:
+                if timeout_seconds:
+                    timeout_ms = int(timeout_seconds * 1000)
+                    await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
+                result = await conn.exec_driver_sql(sql)
+                return [dict(row._mapping) for row in result]
+
+        if timeout_seconds:
+            rows = await asyncio.wait_for(_run(), timeout=timeout_seconds + 5)
+        else:
+            rows = await _run()
 
         logger.info("postgres_query_executed", row_count=len(rows))
         return rows
