@@ -32,3 +32,4 @@ frontend/.next/
 docs/
 
 versatile-execution-agent/
+.worktrees/
