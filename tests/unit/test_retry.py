@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from text_to_sql.llm.retry import create_invoke_with_retry
+from text_to_sql.llm.retry import _build_retryable_exceptions, create_invoke_with_retry
 
 
 @pytest.mark.asyncio
@@ -54,4 +54,49 @@ async def test_invoke_exhausts_retries() -> None:
     model.ainvoke.side_effect = ConnectionError("failed")
     with pytest.raises(ConnectionError):
         await invoke(model, [])
+    assert model.ainvoke.call_count == 2
+
+
+def test_retryable_exceptions_include_base_types() -> None:
+    exceptions = _build_retryable_exceptions()
+    assert ConnectionError in exceptions
+    assert TimeoutError in exceptions
+    assert OSError in exceptions
+
+
+def test_retryable_exceptions_include_google_if_available() -> None:
+    exceptions = _build_retryable_exceptions()
+    try:
+        from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
+        assert ResourceExhausted in exceptions
+        assert ServiceUnavailable in exceptions
+    except ImportError:
+        assert len(exceptions) == 3
+
+
+@pytest.mark.asyncio
+async def test_invoke_retries_on_google_resource_exhausted() -> None:
+    try:
+        from google.api_core.exceptions import ResourceExhausted
+    except ImportError:
+        pytest.skip("google-api-core not installed")
+    invoke = create_invoke_with_retry(max_attempts=3, min_wait=0, max_wait=0)
+    model = AsyncMock()
+    model.ainvoke.side_effect = [ResourceExhausted("429 rate limited"), "response"]
+    result = await invoke(model, [])
+    assert result == "response"
+    assert model.ainvoke.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_retries_on_google_service_unavailable() -> None:
+    try:
+        from google.api_core.exceptions import ServiceUnavailable
+    except ImportError:
+        pytest.skip("google-api-core not installed")
+    invoke = create_invoke_with_retry(max_attempts=3, min_wait=0, max_wait=0)
+    model = AsyncMock()
+    model.ainvoke.side_effect = [ServiceUnavailable("503"), "response"]
+    result = await invoke(model, [])
+    assert result == "response"
     assert model.ainvoke.call_count == 2
