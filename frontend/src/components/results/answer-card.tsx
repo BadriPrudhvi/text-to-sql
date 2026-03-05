@@ -25,14 +25,14 @@ export function AnswerCard({ answer, hideTable }: AnswerCardProps) {
 
   return (
     <motion.div
-      className="prose-sm max-w-none relative group"
+      className="prose-sm max-w-none relative"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
       <button
         onClick={handleCopy}
-        className="absolute top-0 right-0 rounded-md p-1 text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all"
+        className="absolute top-0 right-0 rounded-md p-1 text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
         title="Copy answer"
       >
         {copied ? (
