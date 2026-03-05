@@ -68,6 +68,9 @@ export function generateFollowUpQuestions(
   const suggestions: string[] = [];
   const { result, generated_sql, query_type } = queryResponse;
 
+  // Analytical queries already render a full report — no follow-up pills needed
+  if (query_type === "analytical") return suggestions;
+
   // Extract table names from SQL (simple regex for FROM/JOIN clauses)
   const tableMatches = generated_sql.match(/(?:FROM|JOIN)\s+([`"']?\w+[`"']?)/gi);
   const tables = tableMatches
@@ -100,11 +103,6 @@ export function generateFollowUpQuestions(
         suggestions.push(`Filter by a specific ${strCols[0]}`);
       }
     }
-  }
-
-  // Analytical queries: suggest summary or comparison
-  if (query_type === "analytical") {
-    suggestions.push("Summarize the key takeaways");
   }
 
   // Table-aware suggestions

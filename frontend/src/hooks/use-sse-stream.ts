@@ -65,7 +65,7 @@ function detailForEvent(
     case "analysis_plan_created":
       return `${data.step_count} steps planned`;
     case "plan_step_started":
-      return data.description as string;
+      return undefined;
     case "plan_step_sql_generated":
       return truncateSQL(data.sql as string);
     case "plan_step_executed":
@@ -218,10 +218,19 @@ export function useSSEStream() {
           const meta = EVENT_META[eventType];
           if (!meta) return;
 
+          // Use step description as label for analysis steps instead of generic text
+          let label = meta.label;
+          if (eventType === "plan_step_started" && data.description) {
+            const stepNum = typeof data.step_index === "number" ? data.step_index + 1 : null;
+            const totalSteps = analysisPlan?.length ?? null;
+            const prefix = stepNum && totalSteps ? `Step ${stepNum}/${totalSteps}` : "Analyzing";
+            label = `${prefix}: ${data.description}`;
+          }
+
           const now = Date.now();
           const step: PipelineStep = {
             event: eventType,
-            label: meta.label,
+            label,
             status: statusForEvent(eventType),
             detail: detailForEvent(eventType, data),
             data,

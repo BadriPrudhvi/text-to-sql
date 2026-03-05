@@ -51,6 +51,14 @@ interface ChartableStep {
   data: Record<string, unknown>[];
 }
 
+const ACTION_VERB_RE = /^(calculate|compute|determine|find|get|identify|list|rank|retrieve|show|fetch|count|aggregate|analyze|compare|extract|measure|query|select|summarize|look up)\s+/i;
+
+function cleanStepTitle(description: string): string {
+  const cleaned = description.replace(ACTION_VERB_RE, "");
+  // Capitalize first letter
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 function extractChartableSteps(analysisSteps: Record<string, unknown>[]): ChartableStep[] {
   const chartable: ChartableStep[] = [];
 
@@ -60,15 +68,16 @@ function extractChartableSteps(analysisSteps: Record<string, unknown>[]): Charta
     if (!result || result.length <= 1) continue;
 
     const keys = Object.keys(result[0]);
-    const hasString = keys.some((k) =>
+    const stringCols = keys.filter((k) =>
       result.some((r) => r[k] != null && typeof r[k] === "string" && isNaN(Number(r[k] as string)))
     );
-    const hasNumeric = keys.some((k) =>
+    const numericCols = keys.filter((k) =>
       result.some((r) => r[k] != null && !isNaN(Number(r[k]))) &&
       result.every((r) => r[k] == null || !isNaN(Number(r[k])))
     );
 
-    if (hasString && hasNumeric && result.length <= 50) {
+    // Must match ResultChart's detectChartType: exactly 1 string column, 1-3 numeric columns
+    if (stringCols.length === 1 && numericCols.length >= 1 && numericCols.length <= 3 && result.length <= 50) {
       chartable.push({ description, data: result });
     }
   }
@@ -141,9 +150,9 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
 
       {/* Per-step mini charts */}
       {chartableSteps.map((step, i) => (
-        <div key={i} className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">
-            {step.description}
+        <div key={i} className="rounded-lg border bg-card p-3 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground">
+            {cleanStepTitle(step.description)}
           </p>
           <ResultChart data={step.data} />
         </div>

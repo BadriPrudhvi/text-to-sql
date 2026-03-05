@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { BarChart3, PieChartIcon, Table2, TrendingUp } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, PieChartIcon, Table2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   BarChart,
@@ -228,10 +228,13 @@ export function ResultChart({ data }: ResultChartProps) {
   const lineViable = useMemo(() => isLineViable(analysis, data.length, data), [analysis, data]);
 
   const [chartType, setChartType] = useState<ChartType | "hidden">(defaultType ?? "hidden");
+  const [tablePage, setTablePage] = useState(0);
+  const TABLE_PAGE_SIZE = 10;
 
   // Sync default when data changes
   useEffect(() => {
     setChartType(defaultType ?? "hidden");
+    setTablePage(0);
   }, [defaultType]);
 
   if (!defaultType) return null;
@@ -319,6 +322,60 @@ export function ResultChart({ data }: ResultChartProps) {
         </button>
       </div>
 
+      {!showChart && (() => {
+        const totalPages = Math.ceil(chartData.length / TABLE_PAGE_SIZE);
+        const pageRows = chartData.slice(tablePage * TABLE_PAGE_SIZE, (tablePage + 1) * TABLE_PAGE_SIZE);
+        return (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  {[labelKey, ...valueKeys].map((col) => (
+                    <th key={col} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {pageRows.map((row, i) => (
+                  <tr key={i} className="hover:bg-muted/50 transition-colors">
+                    {[labelKey, ...valueKeys].map((col) => (
+                      <td key={col} className="px-3 py-1.5 whitespace-nowrap">
+                        {typeof row[col] === "number" ? (row[col] as number).toLocaleString() : String(row[col] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-3 py-1.5 border-t">
+                <p className="text-[10px] text-muted-foreground">
+                  Page {tablePage + 1} of {totalPages}
+                </p>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setTablePage((p) => p - 1)}
+                    disabled={tablePage === 0}
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setTablePage((p) => p + 1)}
+                    disabled={tablePage >= totalPages - 1}
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {showChart && (
         <div className="h-[280px] w-full rounded-md border border-transparent transition-colors hover:border-foreground/10 p-1">
           <ResponsiveContainer width="100%" height="100%">
@@ -328,11 +385,11 @@ export function ResultChart({ data }: ResultChartProps) {
                 <XAxis
                   dataKey={labelKey}
                   tick={{ fontSize: 11 }}
-                  interval={0}
-                  tickFormatter={(v: string) => truncateLabel(v, 12)}
-                  angle={chartData.length > 6 ? -35 : 0}
+                  interval={chartData.length > 15 ? Math.ceil(chartData.length / 10) - 1 : 0}
+                  tickFormatter={(v: string) => truncateLabel(v, chartData.length > 15 ? 10 : 12)}
+                  angle={chartData.length > 6 ? -45 : 0}
                   textAnchor={chartData.length > 6 ? "end" : "middle"}
-                  height={chartData.length > 6 ? 70 : 35}
+                  height={chartData.length > 6 ? 80 : 35}
                 />
                 <YAxis tick={{ fontSize: 11 }} width={50} />
                 <Tooltip content={<ChartTooltip />} />
@@ -380,11 +437,11 @@ export function ResultChart({ data }: ResultChartProps) {
                 <XAxis
                   dataKey={labelKey}
                   tick={{ fontSize: 11 }}
-                  interval={0}
-                  tickFormatter={(v: string) => truncateLabel(v)}
-                  angle={chartData.length > 4 ? -35 : 0}
+                  interval={chartData.length > 15 ? Math.ceil(chartData.length / 10) - 1 : 0}
+                  tickFormatter={(v: string) => truncateLabel(v, chartData.length > 15 ? 10 : MAX_LABEL_LENGTH)}
+                  angle={chartData.length > 4 ? -45 : 0}
                   textAnchor={chartData.length > 4 ? "end" : "middle"}
-                  height={chartData.length > 4 ? 70 : 35}
+                  height={chartData.length > 4 ? 80 : 35}
                 />
                 <YAxis tick={{ fontSize: 11 }} width={50} />
                 <Tooltip content={<ChartTooltip />} />

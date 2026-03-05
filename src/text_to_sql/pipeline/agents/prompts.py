@@ -28,6 +28,9 @@ Rules:
 - Each step must be independently executable as a single SQL query
 - Order steps from foundational data gathering to deeper analysis
 - Include steps for different dimensions (time, category, segment) when relevant
+- Write step descriptions as short noun phrases, NOT action commands
+  Good: "Total spending by customer and country", "Average revenue per genre"
+  Bad: "Calculate total spending", "Find the average revenue"
 - The final synthesis will combine all step results into a cohesive answer
 
 Database schema:
