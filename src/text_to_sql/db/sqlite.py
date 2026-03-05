@@ -106,7 +106,7 @@ class SqliteBackend:
 
     async def validate_sql(self, sql: str) -> list[str]:
         assert self._engine is not None
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="sqlite")
         if errors:
             return errors
 
@@ -122,7 +122,7 @@ class SqliteBackend:
         self, sql: str, timeout_seconds: float | None = None
     ) -> list[dict[str, Any]]:
         assert self._engine is not None
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="sqlite")
         if errors:
             raise ValueError(errors[0])
 

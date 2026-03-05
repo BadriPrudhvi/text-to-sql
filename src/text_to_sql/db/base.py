@@ -33,11 +33,17 @@ _FORBIDDEN_KEYWORDS = frozenset(
     {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE", "GRANT", "REVOKE"}
 )
 
+_DIALECT_FORBIDDEN: dict[str, frozenset[str]] = {
+    "postgres": frozenset({"MERGE", "COPY", "CALL", "EXECUTE", "DO", "LISTEN", "NOTIFY"}),
+    "bigquery": frozenset({"MERGE", "EXPORT", "LOAD", "CALL", "ASSERT"}),
+    "sqlite": frozenset({"ATTACH", "DETACH", "REPLACE", "REINDEX"}),
+}
+
 _SQL_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_LINE_COMMENT_RE = re.compile(r"--.*?(\n|$)")
 
 
-def check_read_only(sql: str) -> list[str]:
+def check_read_only(sql: str, *, dialect: str | None = None) -> list[str]:
     """Check that SQL is a safe read-only query. Returns list of errors."""
     # Strip SQL comments that could hide forbidden keywords
     normalized = _SQL_COMMENT_RE.sub(" ", sql)
@@ -52,10 +58,15 @@ def check_read_only(sql: str) -> list[str]:
     if ";" in stripped:
         return ["Multiple SQL statements are not allowed"]
 
+    # Combine base + dialect-specific forbidden keywords
+    forbidden = _FORBIDDEN_KEYWORDS
+    if dialect and dialect in _DIALECT_FORBIDDEN:
+        forbidden = _FORBIDDEN_KEYWORDS | _DIALECT_FORBIDDEN[dialect]
+
     # Check all tokens for forbidden keywords (not just the first word)
     words = normalized.upper().split()
     for word in words:
-        if word in _FORBIDDEN_KEYWORDS:
+        if word in forbidden:
             return [f"Forbidden SQL operation: {word}. Only SELECT/WITH queries are allowed."]
 
     # Only allow queries starting with SELECT or WITH

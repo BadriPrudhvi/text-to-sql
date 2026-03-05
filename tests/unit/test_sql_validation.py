@@ -69,6 +69,63 @@ class TestCleanLlmSql:
         assert clean_llm_sql(raw) == "SELECT\n  id,\n  name\nFROM users\nWHERE active = 1"
 
 
+class TestDialectReadOnly:
+    """Tests for dialect-aware check_read_only guard."""
+
+    # --- PostgreSQL dialect ---
+    @pytest.mark.parametrize("keyword", ["MERGE", "COPY", "CALL", "EXECUTE", "DO", "LISTEN", "NOTIFY"])
+    def test_postgres_rejects_dialect_keywords(self, keyword: str) -> None:
+        errors = check_read_only(f"{keyword} something", dialect="postgres")
+        assert len(errors) == 1
+        assert "Forbidden" in errors[0] or "Only SELECT" in errors[0]
+
+    def test_postgres_allows_select(self) -> None:
+        assert check_read_only("SELECT 1", dialect="postgres") == []
+
+    # --- BigQuery dialect ---
+    @pytest.mark.parametrize("keyword", ["MERGE", "EXPORT", "LOAD", "CALL", "ASSERT"])
+    def test_bigquery_rejects_dialect_keywords(self, keyword: str) -> None:
+        errors = check_read_only(f"{keyword} something", dialect="bigquery")
+        assert len(errors) == 1
+        assert "Forbidden" in errors[0] or "Only SELECT" in errors[0]
+
+    def test_bigquery_allows_select(self) -> None:
+        assert check_read_only("SELECT 1", dialect="bigquery") == []
+
+    # --- SQLite dialect ---
+    @pytest.mark.parametrize("keyword", ["ATTACH", "DETACH", "REPLACE", "REINDEX"])
+    def test_sqlite_rejects_dialect_keywords(self, keyword: str) -> None:
+        errors = check_read_only(f"{keyword} something", dialect="sqlite")
+        assert len(errors) == 1
+        assert "Forbidden" in errors[0] or "Only SELECT" in errors[0]
+
+    def test_sqlite_allows_select(self) -> None:
+        assert check_read_only("SELECT 1", dialect="sqlite") == []
+
+    # --- No dialect (default) uses base keywords only ---
+    def test_no_dialect_allows_dialect_specific_keywords(self) -> None:
+        """Without dialect, dialect-specific keywords are not blocked (caught by first-word check only)."""
+        # MERGE is not in base forbidden set, but will fail the first-word check
+        errors = check_read_only("SELECT MERGE FROM t")
+        assert errors == []  # MERGE as a column name in SELECT is fine
+
+    def test_no_dialect_still_blocks_base_keywords(self) -> None:
+        errors = check_read_only("DROP TABLE users")
+        assert len(errors) == 1
+        assert "Forbidden" in errors[0]
+
+    # --- Comment injection ---
+    def test_comment_with_hidden_merge_in_select_passes(self) -> None:
+        """SELECT with MERGE hidden inside a comment should pass for postgres dialect."""
+        sql = "SELECT /* hidden MERGE */ 1"
+        assert check_read_only(sql, dialect="postgres") == []
+
+    def test_comment_injection_merge_stripped_passes(self) -> None:
+        """Block-comment wrapping MERGE — once stripped, it's just SELECT 1."""
+        sql = "/* MERGE */ SELECT 1"
+        assert check_read_only(sql, dialect="postgres") == []
+
+
 class TestSqliteValidateSql:
     """Tests for SqliteBackend.validate_sql with special characters."""
 

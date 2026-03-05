@@ -105,7 +105,7 @@ class BigQueryBackend:
         return tables
 
     async def validate_sql(self, sql: str) -> list[str]:
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="bigquery")
         if errors:
             return errors
 
@@ -125,7 +125,7 @@ class BigQueryBackend:
     async def execute_sql(
         self, sql: str, timeout_seconds: float | None = None
     ) -> list[dict[str, Any]]:
-        errors = check_read_only(sql)
+        errors = check_read_only(sql, dialect="bigquery")
         if errors:
             raise ValueError(errors[0])
 
