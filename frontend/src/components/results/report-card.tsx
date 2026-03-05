@@ -24,8 +24,8 @@ function extractKPIs(analysisSteps: Record<string, unknown>[]): KPI[] {
     if (result.length === 1) {
       const row = result[0];
       for (const [key, val] of Object.entries(row)) {
-        if (val != null && !isNaN(Number(val))) {
-          const numVal = Number(val);
+        if (typeof val === "number") {
+          const numVal = val;
           kpis.push({
             label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
             value: formatKPIValue(numVal),
@@ -64,6 +64,7 @@ function extractChartableSteps(analysisSteps: Record<string, unknown>[]): Charta
       result.some((r) => r[k] != null && typeof r[k] === "string" && isNaN(Number(r[k] as string)))
     );
     const hasNumeric = keys.some((k) =>
+      result.some((r) => r[k] != null && !isNaN(Number(r[k]))) &&
       result.every((r) => r[k] == null || !isNaN(Number(r[k])))
     );
 
@@ -82,7 +83,7 @@ interface ReportCardProps {
 
 export function ReportCard({ queryResponse, question }: ReportCardProps) {
   const { answer, analysis_steps } = queryResponse;
-  const steps = analysis_steps ?? [];
+  const steps = useMemo(() => analysis_steps ?? [], [analysis_steps]);
 
   const kpis = useMemo(() => extractKPIs(steps), [steps]);
   const chartableSteps = useMemo(() => extractChartableSteps(steps), [steps]);

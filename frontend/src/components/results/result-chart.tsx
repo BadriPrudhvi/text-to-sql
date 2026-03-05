@@ -111,8 +111,10 @@ function isPieViable(analysis: ColumnAnalysis, dataLength: number): boolean {
   return analysis.numericColumns.length === 1 && dataLength <= 8;
 }
 
-function isLineViable(analysis: ColumnAnalysis, dataLength: number): boolean {
-  return analysis.numericColumns.length >= 1 && dataLength >= 2;
+function isLineViable(analysis: ColumnAnalysis, dataLength: number, data?: Record<string, unknown>[]): boolean {
+  if (analysis.numericColumns.length < 1 || dataLength < 2) return false;
+  if (!data) return false;
+  return hasDateColumn(data, analysis.stringColumns) !== null || dataLength >= 5;
 }
 
 // Custom tooltip for both chart types
@@ -205,7 +207,7 @@ export function ResultChart({ data }: ResultChartProps) {
   const analysis = useMemo(() => analyzeColumns(data), [data]);
   const defaultType = useMemo(() => detectChartType(data, analysis), [data, analysis]);
   const pieViable = useMemo(() => isPieViable(analysis, data.length), [analysis, data.length]);
-  const lineViable = useMemo(() => isLineViable(analysis, data.length), [analysis, data.length]);
+  const lineViable = useMemo(() => isLineViable(analysis, data.length, data), [analysis, data]);
 
   const [chartType, setChartType] = useState<ChartType | "hidden">(defaultType ?? "hidden");
 
