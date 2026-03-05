@@ -136,7 +136,11 @@ def create_app() -> FastAPI:
         description="Enterprise-grade text-to-SQL with LangGraph orchestration, multi-turn conversations, SSE streaming, self-correction, caching, and observability",
         lifespan=combined_lifespan,
     )
-    app.include_router(api_router, prefix="/api")
+    # Health check available at both /api/health (unversioned) and /api/v1/health
+    from text_to_sql.api.health import router as health_router_unversioned
+
+    app.include_router(health_router_unversioned, prefix="/api", tags=["health"])
+    app.include_router(api_router, prefix="/api/v1")
     app.mount("/mcp", mcp_http_app)
 
     return app

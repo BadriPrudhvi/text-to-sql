@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_empty_history(client: AsyncClient) -> None:
-    response = await client.get("/api/history")
+    response = await client.get("/api/v1/history")
     assert response.status_code == 200
     data = response.json()
     assert data["queries"] == []
@@ -17,11 +17,11 @@ async def test_empty_history(client: AsyncClient) -> None:
 async def test_history_after_query(client: AsyncClient) -> None:
     # Submit a query
     await client.post(
-        "/api/query",
+        "/api/v1/query",
         json={"question": "How many users?"},
     )
 
-    response = await client.get("/api/history")
+    response = await client.get("/api/v1/history")
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 1
@@ -33,11 +33,11 @@ async def test_history_pagination(client: AsyncClient) -> None:
     # Submit multiple queries
     for i in range(3):
         await client.post(
-            "/api/query",
+            "/api/v1/query",
             json={"question": f"Question {i}"},
         )
 
-    response = await client.get("/api/history?limit=2&offset=0")
+    response = await client.get("/api/v1/history?limit=2&offset=0")
     data = response.json()
     assert len(data["queries"]) == 2
     assert data["total"] == 3

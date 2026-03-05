@@ -45,14 +45,14 @@ async def pending_client():
 async def test_approve_with_modified_sql(pending_client: AsyncClient) -> None:
     """Approve a query with validation errors by providing corrected SQL."""
     submit = await pending_client.post(
-        "/api/query",
+        "/api/v1/query",
         json={"question": "How many items?"},
     )
     assert submit.json()["approval_status"] == "pending"
     query_id = submit.json()["query_id"]
 
     approve = await pending_client.post(
-        f"/api/approve/{query_id}",
+        f"/api/v1/approve/{query_id}",
         json={"approved": True, "modified_sql": "SELECT count(*) FROM users"},
     )
     assert approve.status_code == 200
@@ -65,13 +65,13 @@ async def test_approve_with_modified_sql(pending_client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_reject_query(pending_client: AsyncClient) -> None:
     submit = await pending_client.post(
-        "/api/query",
+        "/api/v1/query",
         json={"question": "How many items?"},
     )
     query_id = submit.json()["query_id"]
 
     reject = await pending_client.post(
-        f"/api/approve/{query_id}",
+        f"/api/v1/approve/{query_id}",
         json={"approved": False},
     )
     assert reject.status_code == 200
