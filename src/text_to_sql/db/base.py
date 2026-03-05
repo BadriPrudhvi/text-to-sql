@@ -96,7 +96,24 @@ def clean_llm_sql(sql: str) -> str:
 
 _SAFE_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+_POSTGRES_IDENTIFIER_RE = re.compile(
+    r'^("([^"]+)"'                    # quoted identifier
+    r'|[a-zA-Z_$][a-zA-Z0-9_$]*)'    # unquoted (allows $)
+    r'(\.'                            # optional .schema
+    r'("([^"]+)"'
+    r'|[a-zA-Z_$][a-zA-Z0-9_$]*))*$'
+)
+_BIGQUERY_IDENTIFIER_RE = re.compile(
+    r'^(`[a-zA-Z0-9_][a-zA-Z0-9_.:-]*`'  # backtick-quoted (allows hyphens, dots, colons)
+    r'|[a-zA-Z_][a-zA-Z0-9_]*'           # unquoted simple
+    r'(\.[a-zA-Z_][a-zA-Z0-9_]*)*)$'     # optional dot-separated parts
+)
 
-def validate_identifier(name: str) -> bool:
-    """Check that a SQL identifier (table/column name) is safe."""
+
+def validate_identifier(name: str, dialect: str | None = None) -> bool:
+    """Check that a SQL identifier (table/column name) is safe for the given dialect."""
+    if dialect == "postgres":
+        return bool(_POSTGRES_IDENTIFIER_RE.match(name))
+    if dialect == "bigquery":
+        return bool(_BIGQUERY_IDENTIFIER_RE.match(name))
     return bool(_SAFE_IDENTIFIER_RE.match(name))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from text_to_sql.db.base import check_read_only, clean_llm_sql
+from text_to_sql.db.base import check_read_only, clean_llm_sql, validate_identifier
 from text_to_sql.db.sqlite import SqliteBackend
 
 
@@ -187,3 +187,50 @@ class TestSqliteExecuteSql:
         """execute_sql should handle :word in string literals without bind param errors."""
         rows = await backend.execute_sql("SELECT ':placeholder' AS val")
         assert rows == [{"val": ":placeholder"}]
+
+
+class TestDialectIdentifierValidation:
+    """Tests for dialect-aware validate_identifier."""
+
+    # SQLite — strict (existing behavior)
+    def test_sqlite_simple_name(self) -> None:
+        assert validate_identifier("users", dialect="sqlite") is True
+
+    def test_sqlite_rejects_hyphen(self) -> None:
+        assert validate_identifier("my-table", dialect="sqlite") is False
+
+    # PostgreSQL — allows schema.table and quoted identifiers
+    def test_postgres_simple_name(self) -> None:
+        assert validate_identifier("users", dialect="postgres") is True
+
+    def test_postgres_qualified_name(self) -> None:
+        assert validate_identifier("public.users", dialect="postgres") is True
+
+    def test_postgres_quoted_identifier(self) -> None:
+        assert validate_identifier('"Order Details"', dialect="postgres") is True
+
+    def test_postgres_dollar_sign(self) -> None:
+        assert validate_identifier("sys$users", dialect="postgres") is True
+
+    def test_postgres_rejects_semicolon(self) -> None:
+        assert validate_identifier("users;drop", dialect="postgres") is False
+
+    # BigQuery — allows backticks, hyphens in project IDs
+    def test_bigquery_simple_name(self) -> None:
+        assert validate_identifier("users", dialect="bigquery") is True
+
+    def test_bigquery_backtick_quoted(self) -> None:
+        assert validate_identifier("`my-project.dataset.table`", dialect="bigquery") is True
+
+    def test_bigquery_qualified_no_backticks(self) -> None:
+        assert validate_identifier("dataset.table_name", dialect="bigquery") is True
+
+    def test_bigquery_rejects_semicolon(self) -> None:
+        assert validate_identifier("table;drop", dialect="bigquery") is False
+
+    # Default (no dialect) — strict
+    def test_default_simple(self) -> None:
+        assert validate_identifier("users") is True
+
+    def test_default_rejects_dot(self) -> None:
+        assert validate_identifier("schema.table") is False

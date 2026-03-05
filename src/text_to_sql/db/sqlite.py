@@ -47,7 +47,7 @@ class SqliteBackend:
                 table_type = "VIEW" if table_row[1] == "view" else "TABLE"
 
                 # Validate table name before interpolation into PRAGMA
-                if not validate_identifier(table_name):
+                if not validate_identifier(table_name, dialect="sqlite"):
                     logger.warning("sqlite_invalid_table_name", table_name=table_name)
                     continue
 
