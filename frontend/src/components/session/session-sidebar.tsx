@@ -15,6 +15,8 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { SchemaBrowser } from "./schema-browser";
+import type { SchemaTable } from "@/hooks/use-schema";
 import type { Session } from "@/lib/types";
 
 interface SessionSidebarProps {
@@ -24,6 +26,9 @@ interface SessionSidebarProps {
   onNewSession: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
+  schemaTables?: SchemaTable[];
+  schemaLoading?: boolean;
+  onSchemaTableClick?: (tableName: string) => void;
 }
 
 export function SessionSidebar({
@@ -33,6 +38,9 @@ export function SessionSidebar({
   onNewSession,
   onSwitchSession,
   onDeleteSession,
+  schemaTables,
+  schemaLoading,
+  onSchemaTableClick,
 }: SessionSidebarProps) {
   return (
     <Sidebar>
@@ -85,6 +93,17 @@ export function SessionSidebar({
                 ))}
               </SidebarMenu>
             )}
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarSeparator />
+        <SidebarGroup>
+          <SidebarGroupLabel>Database Schema</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SchemaBrowser
+              tables={schemaTables ?? []}
+              isLoading={schemaLoading ?? false}
+              onTableClick={onSchemaTableClick}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
