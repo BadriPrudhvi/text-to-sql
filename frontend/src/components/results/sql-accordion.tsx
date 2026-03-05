@@ -54,7 +54,7 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
   // shiki generates sanitized HTML from code (no user input in HTML generation) — safe to render
   return (
     <Accordion type="single" collapsible className="w-full">
-      <AccordionItem value="sql" className="rounded-md border border-blue-200 bg-blue-50/50">
+      <AccordionItem value="sql" className="rounded-md border border-blue-200 bg-blue-50/50 transition-colors hover:border-blue-300">
         <AccordionTrigger className="px-3 py-2 text-xs hover:no-underline">
           <div className="flex items-center gap-2">
             <Database className="h-3.5 w-3.5 text-blue-500" />

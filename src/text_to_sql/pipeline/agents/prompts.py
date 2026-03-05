@@ -53,6 +53,7 @@ Rules:
 - Do NOT include markdown code fences
 - The query must be a SELECT statement
 - Use appropriate aggregations, grouping, and ordering
+- ALWAYS fully qualify column names with table names/aliases when joining multiple tables (e.g., Customer.CustomerId, NOT just CustomerId)
 - Limit results to a reasonable number of rows (use LIMIT if needed)
 - The query must be valid {dialect} SQL
 - If the dialect is sqlite, do NOT use QUALIFY, PIVOT, UNPIVOT, MERGE, or any syntax not supported by SQLite — use subqueries or CTEs instead"""

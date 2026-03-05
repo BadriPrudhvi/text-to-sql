@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+
 import { streamQueryURL } from "@/lib/api";
 import { EVENT_META } from "@/lib/constants";
 import type {
@@ -15,6 +16,7 @@ interface SSEStreamState {
   finalResponse: QueryResponse | null;
   isStreaming: boolean;
   error: string | null;
+  totalDurationMs: number | null;
 }
 
 function statusForEvent(event: SSEEventType): StepStatus {
@@ -91,19 +93,23 @@ export function useSSEStream() {
     finalResponse: null,
     isStreaming: false,
     error: null,
+    totalDurationMs: null,
   });
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamStartTimeRef = useRef<number>(0);
 
   const startStream = useCallback(
     (sessionId: string, question: string) => {
       // Close any existing stream
       eventSourceRef.current?.close();
 
+      streamStartTimeRef.current = Date.now();
       setState({
         pipelineSteps: [],
         finalResponse: null,
         isStreaming: true,
         error: null,
+        totalDurationMs: null,
       });
 
       const url = streamQueryURL(sessionId, question);
@@ -160,6 +166,7 @@ export function useSSEStream() {
                 (doneData.analysis_steps as Record<string, unknown>[]) || null,
             };
 
+            const totalDurationMs = Date.now() - streamStartTimeRef.current;
             setState((prev) => ({
               ...prev,
               // Mark any remaining active steps as completed
@@ -168,6 +175,7 @@ export function useSSEStream() {
               ),
               finalResponse: finalResp,
               isStreaming: false,
+              totalDurationMs,
             }));
             return;
           }
@@ -210,12 +218,14 @@ export function useSSEStream() {
           const meta = EVENT_META[eventType];
           if (!meta) return;
 
+          const now = Date.now();
           const step: PipelineStep = {
             event: eventType,
             label: meta.label,
             status: statusForEvent(eventType),
             detail: detailForEvent(eventType, data),
             data,
+            timestamp: now,
           };
 
           setState((prev) => {
@@ -227,7 +237,10 @@ export function useSSEStream() {
               steps[lastIdx].status === "active" &&
               step.status !== "active"
             ) {
-              steps[lastIdx] = step;
+              steps[lastIdx] = {
+                ...step,
+                durationMs: now - steps[lastIdx].timestamp,
+              };
             } else {
               steps.push(step);
             }

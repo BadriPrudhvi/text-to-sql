@@ -14,6 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/hooks/use-session";
 import { useChat } from "@/hooks/use-chat";
+import { useSchema } from "@/hooks/use-schema";
 import type { ApprovalResponse, QueryResponse } from "@/lib/types";
 
 export function ChatPage() {
@@ -33,6 +34,8 @@ export function ChatPage() {
     sendMessage,
     updateLastAssistantMessage,
   } = useChat(activeSessionId);
+
+  const { tables } = useSchema();
 
   // Approval dialog state
   const [approvalState, setApprovalState] = useState<{
@@ -118,6 +121,7 @@ export function ChatPage() {
           messages={messages}
           onApprovalNeeded={handleApprovalNeeded}
           onSendMessage={handleSend}
+          tables={tables}
         />
 
         {/* Input */}

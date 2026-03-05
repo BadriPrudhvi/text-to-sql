@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -80,13 +81,17 @@ function DataTableInner({
   });
 
   return (
-    <div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       <div className="flex items-center gap-2 mb-2">
         <Badge variant="secondary" className="text-xs">
           {data.length} row{data.length !== 1 ? "s" : ""}
         </Badge>
       </div>
-      <div className="rounded-md border overflow-x-auto">
+      <div className="rounded-md border overflow-x-auto transition-colors hover:border-foreground/15">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -150,6 +155,6 @@ function DataTableInner({
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

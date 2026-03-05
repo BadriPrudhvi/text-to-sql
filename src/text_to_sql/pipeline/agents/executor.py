@@ -18,6 +18,25 @@ from text_to_sql.pipeline.agents.prompts import STEP_SQL_PROMPT
 logger = structlog.get_logger()
 
 
+_MAX_STEP_CORRECTION_ATTEMPTS = 2
+
+STEP_SQL_CORRECTION_PROMPT = """\
+The SQL you generated for this analysis step failed validation.
+
+Original step description: {step_description}
+SQL hint: {sql_hint}
+
+Your SQL:
+{sql}
+
+Error: {error}
+
+Fix the SQL and return ONLY the corrected query. Common fixes:
+- Fully qualify column names with table aliases when joining multiple tables
+- Use correct syntax for the {dialect} dialect
+- Ensure all referenced tables and columns exist in the schema"""
+
+
 def create_execute_plan_step_node(
     chat_model: BaseChatModel,
     db_backend: DatabaseBackend,
@@ -109,31 +128,68 @@ def create_execute_plan_step_node(
                 "sql": sql,
             })
 
-            # Validate SQL
-            errors = await db_backend.validate_sql(sql)
-            if errors:
-                step_result["error"] = f"Validation failed: {'; '.join(errors)}"
-                writer({
-                    "event": "plan_step_failed",
-                    "step_index": current_step,
-                    "error": step_result["error"],
-                })
-            else:
-                # Execute SQL
-                result = await db_backend.execute_sql(
-                    sql, timeout_seconds=db_query_timeout_seconds
-                )
-                step_result["result"] = result
+            # Validate and execute with self-correction
+            for attempt in range(_MAX_STEP_CORRECTION_ATTEMPTS + 1):
+                errors = await db_backend.validate_sql(sql)
+                if not errors:
+                    # Execute SQL
+                    result = await db_backend.execute_sql(
+                        sql, timeout_seconds=db_query_timeout_seconds
+                    )
+                    step_result["sql"] = sql
+                    step_result["result"] = result
+                    logger.info(
+                        "plan_step_executed",
+                        step_index=current_step,
+                        row_count=len(result),
+                    )
+                    writer({
+                        "event": "plan_step_executed",
+                        "step_index": current_step,
+                        "row_count": len(result),
+                    })
+                    break
+
+                # Out of retries — record the error
+                if attempt == _MAX_STEP_CORRECTION_ATTEMPTS:
+                    step_result["error"] = f"Validation failed: {'; '.join(errors)}"
+                    writer({
+                        "event": "plan_step_failed",
+                        "step_index": current_step,
+                        "error": step_result["error"],
+                    })
+                    break
+
+                # Self-correct: feed error back to LLM
                 logger.info(
-                    "plan_step_executed",
+                    "plan_step_correcting",
                     step_index=current_step,
-                    row_count=len(result),
+                    attempt=attempt + 1,
+                    error="; ".join(errors),
                 )
                 writer({
-                    "event": "plan_step_executed",
+                    "event": "plan_step_correcting",
                     "step_index": current_step,
-                    "row_count": len(result),
+                    "attempt": attempt + 1,
                 })
+                correction_prompt = STEP_SQL_CORRECTION_PROMPT.format(
+                    step_description=step_desc,
+                    sql_hint=step["sql_hint"],
+                    sql=sql,
+                    error="; ".join(errors),
+                    dialect=dialect,
+                )
+                correction_messages = [HumanMessage(content=correction_prompt)]
+                try:
+                    structured_model = chat_model.with_structured_output(StepSQLResult)
+                    correction_result = await invoke_with_retry(structured_model, correction_messages)
+                    if isinstance(correction_result, StepSQLResult):
+                        sql = clean_llm_sql(correction_result.sql.strip())
+                    else:
+                        sql = clean_llm_sql(str(correction_result.content).strip() if hasattr(correction_result, "content") else str(correction_result).strip())
+                except Exception:
+                    response = await invoke_with_retry(chat_model, correction_messages)
+                    sql = clean_llm_sql(str(response.content).strip())
         except Exception as e:
             step_result["error"] = str(e)
             logger.warning(

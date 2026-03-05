@@ -51,3 +51,15 @@ export function getSessionHistory(
 export function getHealth(): Promise<HealthResponse> {
   return fetchJSON(`${BASE}/health`);
 }
+
+export interface SchemaTableResponse {
+  tables: {
+    name: string;
+    description: string | null;
+    columns: { name: string; type: string }[];
+  }[];
+}
+
+export function getSchema(): Promise<SchemaTableResponse> {
+  return fetchJSON(`${BASE}/schema/tables`);
+}

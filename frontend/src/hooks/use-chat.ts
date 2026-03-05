@@ -73,6 +73,7 @@ export function useChat(sessionId: string | null) {
           queryResponse: stream.finalResponse,
           isStreaming: false,
           error: stream.error || undefined,
+          totalDurationMs: stream.totalDurationMs,
         };
       } else {
         copy[lastIdx] = {
@@ -84,7 +85,7 @@ export function useChat(sessionId: string | null) {
       }
       return copy;
     });
-  }, [stream.pipelineSteps, stream.finalResponse, stream.isStreaming, stream.error]);
+  }, [stream.pipelineSteps, stream.finalResponse, stream.isStreaming, stream.error, stream.totalDurationMs]);
 
   const sendMessage = useCallback(
     (content: string, sessionIdOverride?: string) => {

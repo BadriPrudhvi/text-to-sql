@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
   Brain,
@@ -53,13 +54,18 @@ function StepIcon({ icon, status }: { icon: keyof typeof ICON_MAP; status: StepS
   );
 }
 
+function formatDuration(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
 interface PipelineStepperProps {
   steps: PipelineStep[];
   isStreaming: boolean;
   analysisSteps?: Record<string, unknown>[] | null;
+  totalDurationMs?: number | null;
 }
 
-export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineStepperProps) {
+export function PipelineStepper({ steps, isStreaming, analysisSteps, totalDurationMs }: PipelineStepperProps) {
   const [expanded, setExpanded] = useState(false);
   const [expandedStepIndices, setExpandedStepIndices] = useState<Set<number>>(new Set());
 
@@ -116,6 +122,8 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
               ? activeStep?.label || "Processing..."
               : hasError
               ? "Completed with issues"
+              : totalDurationMs
+              ? `Completed in ${formatDuration(totalDurationMs)}`
               : "Completed"}
           </span>
 
@@ -140,8 +148,16 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
       </div>
 
       {/* Expanded step list */}
+      <AnimatePresence>
       {expanded && visibleSteps.length > 0 && (
-        <div className="mt-1.5 ml-2.5">
+        <motion.div
+          className="mt-1.5 ml-2.5"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ overflow: "hidden" }}
+        >
           {visibleSteps.map((step, i) => {
             const meta = EVENT_META[step.event];
             const isLast = i === visibleSteps.length - 1;
@@ -165,7 +181,13 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
             const isStepExpanded = stepData && expandedStepIndices.has(stepIndex);
 
             return (
-              <div key={i} className="flex gap-2.5">
+              <motion.div
+                key={i}
+                className="flex gap-2.5"
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, delay: i * 0.03 }}
+              >
                 {/* Timeline rail */}
                 <div className="flex flex-col items-center">
                   <div
@@ -206,9 +228,17 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
                         )}
                       />
                       {step.label}
+                      {step.durationMs != null && step.status === "completed" && (
+                        <span className="text-muted-foreground/60 font-normal">{formatDuration(step.durationMs)}</span>
+                      )}
                     </button>
                   ) : (
-                    <p className="text-xs font-medium leading-5">{step.label}</p>
+                    <p className="text-xs font-medium leading-5">
+                      {step.label}
+                      {step.durationMs != null && step.status === "completed" && (
+                        <span className="ml-1.5 text-muted-foreground/60 font-normal">{formatDuration(step.durationMs)}</span>
+                      )}
+                    </p>
                   )}
                   {step.detail && !isStepExpanded && (
                     <p className="truncate text-xs text-muted-foreground mt-0.5">
@@ -240,11 +270,12 @@ export function PipelineStepper({ steps, isStreaming, analysisSteps }: PipelineS
                     </ol>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
