@@ -91,7 +91,7 @@ function DataTableInner({
           {data.length} row{data.length !== 1 ? "s" : ""}
         </Badge>
       </div>
-      <div className="rounded-md border overflow-x-auto">
+      <div className="rounded-md border overflow-x-auto transition-colors hover:border-foreground/15">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

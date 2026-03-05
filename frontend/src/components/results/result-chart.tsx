@@ -124,7 +124,7 @@ export function ResultChart({ data }: ResultChartProps) {
       </div>
 
       {showChart && (
-        <div className="h-[260px] w-full">
+        <div className="h-[260px] w-full rounded-md border border-transparent transition-colors hover:border-foreground/10 p-1">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "pie" ? (
               <PieChart>

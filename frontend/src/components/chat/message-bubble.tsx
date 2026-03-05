@@ -6,6 +6,7 @@ import { SQLAccordion } from "@/components/results/sql-accordion";
 import { DataTable } from "@/components/results/data-table";
 import { ResultChart } from "@/components/results/result-chart";
 import { AnswerCard } from "@/components/results/answer-card";
+import { SourceTables } from "@/components/results/source-tables";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { QueryTypeBadge } from "@/components/ui/query-type-badge";
@@ -36,7 +37,7 @@ export function MessageBubble({ message, onApprovalNeeded }: MessageBubbleProps)
           "max-w-[600px] rounded-lg px-4 py-3",
           isUser
             ? "bg-primary text-primary-foreground"
-            : "border bg-background"
+            : "border bg-background transition-colors hover:border-foreground/15"
         )}
       >
         {isUser ? (
@@ -117,6 +118,10 @@ function AssistantContent({
 
         {queryResponse?.answer && <AnswerCard answer={queryResponse.answer} />}
 
+        {queryResponse?.generated_sql && !isStreaming && (
+          <SourceTables sql={queryResponse.generated_sql} />
+        )}
+
         {queryResponse?.error && queryResponse.approval_status === "failed" && (
           <div className="flex items-start gap-2 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -158,6 +163,9 @@ function AssistantContent({
           <ResultChart data={queryResponse.result} />
         )}
         {queryResponse.answer && <AnswerCard answer={queryResponse.answer} />}
+        {queryResponse.generated_sql && (
+          <SourceTables sql={queryResponse.generated_sql} />
+        )}
         {queryResponse.error && (
           <div className="flex items-start gap-2 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />

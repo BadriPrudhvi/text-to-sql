@@ -1,4 +1,5 @@
 import type { SchemaTable } from "@/hooks/use-schema";
+import type { QueryResponse } from "@/lib/types";
 
 const FALLBACK_QUESTIONS = [
   "How many rows are in each table?",
@@ -54,4 +55,63 @@ export function generateQuickQuestions(tables?: SchemaTable[]): string[] {
   }
 
   return questions.slice(0, 3);
+}
+
+/**
+ * Generate follow-up question suggestions based on the last query result.
+ * Extracts column names and result shape to create contextual suggestions.
+ */
+export function generateFollowUpQuestions(
+  lastQuestion: string,
+  queryResponse: QueryResponse
+): string[] {
+  const suggestions: string[] = [];
+  const { result, generated_sql, query_type } = queryResponse;
+
+  // Extract table names from SQL (simple regex for FROM/JOIN clauses)
+  const tableMatches = generated_sql.match(/(?:FROM|JOIN)\s+([`"']?\w+[`"']?)/gi);
+  const tables = tableMatches
+    ?.map((m) => m.replace(/(?:FROM|JOIN)\s+/i, "").replace(/[`"']/g, ""))
+    .filter((v, i, a) => a.indexOf(v) === i) ?? [];
+
+  if (result && result.length > 0) {
+    const columns = Object.keys(result[0]);
+    const numericCols = columns.filter((col) =>
+      result.every((row) => row[col] == null || typeof row[col] === "number" || !isNaN(Number(row[col])))
+    );
+
+    // If results are aggregated, suggest drilling deeper
+    if (result.length <= 20 && numericCols.length > 0) {
+      const col = numericCols[0];
+      suggestions.push(`Break down ${col} by month or category`);
+    }
+
+    // If few rows returned, suggest broadening
+    if (result.length <= 5 && result.length > 0) {
+      suggestions.push(`Show the bottom 5 instead`);
+    }
+
+    // If many rows, suggest filtering
+    if (result.length > 10) {
+      const strCols = columns.filter((c) => !numericCols.includes(c));
+      if (strCols.length > 0) {
+        suggestions.push(`Filter by a specific ${strCols[0]}`);
+      }
+    }
+  }
+
+  // Analytical queries: suggest summary or comparison
+  if (query_type === "analytical") {
+    suggestions.push("Summarize the key takeaways");
+  }
+
+  // Table-aware suggestions
+  if (tables.length > 0) {
+    const table = tables[0];
+    if (!lastQuestion.toLowerCase().includes("trend")) {
+      suggestions.push(`Show trends over time for ${table}`);
+    }
+  }
+
+  return suggestions.slice(0, 3);
 }

@@ -5,7 +5,7 @@ import { Database } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
-import { generateQuickQuestions } from "@/lib/quick-questions";
+import { generateQuickQuestions, generateFollowUpQuestions } from "@/lib/quick-questions";
 import type { ChatMessage } from "@/lib/types";
 import type { SchemaTable } from "@/hooks/use-schema";
 
@@ -74,8 +74,60 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage, tables 
             </motion.div>
           ))}
         </AnimatePresence>
+        <FollowUpPills messages={messages} onSend={onSendMessage} />
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
+  );
+}
+
+function FollowUpPills({
+  messages,
+  onSend,
+}: {
+  messages: ChatMessage[];
+  onSend?: (content: string) => void;
+}) {
+  if (!onSend || messages.length === 0) return null;
+
+  // Find last assistant message that is done streaming and has a query response
+  const lastAssistant = [...messages].reverse().find(
+    (m) => m.role === "assistant" && !m.isStreaming && m.queryResponse
+  );
+  if (!lastAssistant?.queryResponse) return null;
+
+  // Find the user question that preceded it
+  const assistantIdx = messages.indexOf(lastAssistant);
+  const userMsg = messages
+    .slice(0, assistantIdx)
+    .reverse()
+    .find((m) => m.role === "user");
+
+  const followUps = generateFollowUpQuestions(
+    userMsg?.content ?? "",
+    lastAssistant.queryResponse
+  );
+  if (followUps.length === 0) return null;
+
+  return (
+    <motion.div
+      className="flex flex-wrap gap-2 pt-1 pb-2"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: 0.3 }}
+    >
+      {followUps.map((q, i) => (
+        <motion.button
+          key={q}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2, delay: 0.35 + i * 0.06 }}
+          onClick={() => onSend(q)}
+          className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          {q}
+        </motion.button>
+      ))}
+    </motion.div>
   );
 }
