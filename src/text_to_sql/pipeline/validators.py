@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any
 
 
@@ -20,6 +21,9 @@ class ResultValidator:
         warnings.extend(self._check_empty_aggregate(sql, result))
         warnings.extend(self._check_suspicious_negatives(result))
         warnings.extend(self._check_limit_mismatch(sql, result, question))
+        warnings.extend(self._check_cartesian_product(sql, result))
+        warnings.extend(self._check_high_null_ratio(result))
+        warnings.extend(self._check_duplicate_rows(result))
 
         return warnings
 
@@ -65,4 +69,50 @@ class ResultValidator:
                 return [
                     f"User asked for top {requested} but query returned {len(result)} rows"
                 ]
+        return []
+
+    def _check_cartesian_product(
+        self, sql: str, result: list[dict[str, Any]]
+    ) -> list[str]:
+        """Warn when JOINs produce suspiciously many rows (possible cartesian product)."""
+        sql_upper = sql.upper()
+        has_join = "JOIN" in sql_upper
+        if not has_join:
+            return []
+        limit_match = re.search(r"LIMIT\s+(\d+)", sql, re.IGNORECASE)
+        limit_val = int(limit_match.group(1)) if limit_match else None
+        if limit_val and len(result) > limit_val * 10:
+            return [
+                f"Possible cartesian product — query has JOINs and returned {len(result)} rows (LIMIT was {limit_val})"
+            ]
+        if not limit_val and len(result) > 10000:
+            return [
+                f"Possible cartesian product — query has JOINs and returned {len(result)} rows"
+            ]
+        return []
+
+    def _check_high_null_ratio(self, result: list[dict[str, Any]]) -> list[str]:
+        """Flag columns where >80% of values are NULL (min 5 rows)."""
+        if len(result) < 5:
+            return []
+        for col_name in result[0]:
+            null_count = sum(1 for row in result if row.get(col_name) is None)
+            ratio = null_count / len(result)
+            if ratio > 0.8:
+                return [
+                    f"High NULL ratio ({ratio:.0%}) in column '{col_name}' — possible incorrect JOIN or filter"
+                ]
+        return []
+
+    def _check_duplicate_rows(self, result: list[dict[str, Any]]) -> list[str]:
+        """Warn when >50% of rows are identical (min 4 rows)."""
+        if len(result) < 4:
+            return []
+        row_tuples = [tuple(sorted(row.items())) for row in result]
+        counts = Counter(row_tuples)
+        most_common_count = counts.most_common(1)[0][1]
+        if most_common_count > len(result) * 0.5:
+            return [
+                f"Excessive duplicate rows — {most_common_count} of {len(result)} rows are identical"
+            ]
         return []
