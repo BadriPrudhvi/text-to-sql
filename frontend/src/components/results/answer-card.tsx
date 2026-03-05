@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "motion/react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -11,7 +12,12 @@ export function AnswerCard({ answer }: AnswerCardProps) {
   if (!answer) return null;
 
   return (
-    <div className="prose-sm max-w-none">
+    <motion.div
+      className="prose-sm max-w-none"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -66,6 +72,6 @@ export function AnswerCard({ answer }: AnswerCardProps) {
       >
         {answer}
       </Markdown>
-    </div>
+    </motion.div>
   );
 }

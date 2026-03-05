@@ -2,23 +2,21 @@
 
 import { useEffect, useRef } from "react";
 import { Database } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
+import { generateQuickQuestions } from "@/lib/quick-questions";
 import type { ChatMessage } from "@/lib/types";
-
-const QUICK_QUESTIONS = [
-  "How many artists are in the database?",
-  "Top 5 genres by number of tracks",
-  "Which customers spent the most money?",
-];
+import type { SchemaTable } from "@/hooks/use-schema";
 
 interface MessageListProps {
   messages: ChatMessage[];
   onApprovalNeeded: (queryId: string, sql: string, errors: string[]) => void;
   onSendMessage?: (content: string) => void;
+  tables?: SchemaTable[];
 }
 
-export function MessageList({ messages, onApprovalNeeded, onSendMessage }: MessageListProps) {
+export function MessageList({ messages, onApprovalNeeded, onSendMessage, tables }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,6 +24,7 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage }: Messa
   }, [messages]);
 
   if (messages.length === 0) {
+    const questions = generateQuickQuestions(tables);
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="text-center max-w-sm">
@@ -38,14 +37,17 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage }: Messa
           </p>
           {onSendMessage && (
             <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {QUICK_QUESTIONS.map((q) => (
-                <button
+              {questions.map((q, i) => (
+                <motion.button
                   key={q}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: i * 0.08 }}
                   onClick={() => onSendMessage(q)}
                   className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 >
                   {q}
-                </button>
+                </motion.button>
               ))}
             </div>
           )}
@@ -57,13 +59,21 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage }: Messa
   return (
     <ScrollArea className="flex-1">
       <div className="mx-auto max-w-[720px] space-y-4 p-4">
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            onApprovalNeeded={onApprovalNeeded}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <MessageBubble
+                message={msg}
+                onApprovalNeeded={onApprovalNeeded}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         <div ref={bottomRef} />
       </div>
     </ScrollArea>

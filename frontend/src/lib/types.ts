@@ -82,6 +82,8 @@ export interface PipelineStep {
   status: StepStatus;
   detail?: string;
   data?: Record<string, unknown>;
+  timestamp: number;
+  durationMs?: number;
 }
 
 export interface ChatMessage {
@@ -93,6 +95,7 @@ export interface ChatMessage {
   queryResponse?: QueryResponse;
   isStreaming?: boolean;
   error?: string;
+  totalDurationMs?: number | null;
 }
 
 export interface Session {

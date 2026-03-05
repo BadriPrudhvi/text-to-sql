@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -80,7 +81,11 @@ function DataTableInner({
   });
 
   return (
-    <div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       <div className="flex items-center gap-2 mb-2">
         <Badge variant="secondary" className="text-xs">
           {data.length} row{data.length !== 1 ? "s" : ""}
@@ -150,6 +155,6 @@ function DataTableInner({
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

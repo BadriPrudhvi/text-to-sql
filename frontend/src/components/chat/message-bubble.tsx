@@ -4,6 +4,7 @@ import { User, Bot, AlertCircle, CheckCircle2 } from "lucide-react";
 import { PipelineStepper } from "@/components/pipeline/pipeline-stepper";
 import { SQLAccordion } from "@/components/results/sql-accordion";
 import { DataTable } from "@/components/results/data-table";
+import { ResultChart } from "@/components/results/result-chart";
 import { AnswerCard } from "@/components/results/answer-card";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ function AssistantContent({
           steps={pipelineSteps}
           isStreaming={!!isStreaming}
           analysisSteps={queryResponse?.analysis_steps}
+          totalDurationMs={message.totalDurationMs}
         />
 
         {error && (
@@ -107,6 +109,10 @@ function AssistantContent({
 
         {queryResponse?.result && queryResponse.result.length > 0 && (
           <DataTable data={queryResponse.result} />
+        )}
+
+        {queryResponse?.result && queryResponse.result.length > 0 && (
+          <ResultChart data={queryResponse.result} />
         )}
 
         {queryResponse?.answer && <AnswerCard answer={queryResponse.answer} />}
@@ -147,6 +153,9 @@ function AssistantContent({
         )}
         {queryResponse.result && queryResponse.result.length > 0 && (
           <DataTable data={queryResponse.result} />
+        )}
+        {queryResponse.result && queryResponse.result.length > 0 && (
+          <ResultChart data={queryResponse.result} />
         )}
         {queryResponse.answer && <AnswerCard answer={queryResponse.answer} />}
         {queryResponse.error && (
