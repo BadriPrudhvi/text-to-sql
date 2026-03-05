@@ -71,13 +71,13 @@ Next.js 16 chatbot UI with SSE streaming, session management, and SQL approval f
 
 | Directory | Purpose |
 |-----------|---------|
-| `hooks/` | `use-sse-stream` (SSE consumer with accumulated state), `use-chat` (message state + history), `use-session` (localStorage CRUD) |
+| `hooks/` | `use-sse-stream` (SSE consumer with accumulated state), `use-chat` (message state + history), `use-session` (localStorage CRUD), `use-schema` (schema fetch for browser + quick questions) |
 | `components/chat/` | Chat page layout (shadcn sidebar), message bubbles with query type badges, input bar, message list with quick-question pills |
 | `components/pipeline/` | Collapsible pipeline stepper with vertical timeline, color-coded status, analysis plan sub-steps |
-| `components/results/` | Data table (TanStack with sorting/pagination), SQL accordion (shiki + sql-formatter), markdown answer card (remark-gfm with table support) |
+| `components/results/` | Data table (TanStack with sorting/pagination + CSV/JSON export), SQL accordion (shiki + sql-formatter + .sql download), charts (bar/line/pie with type picker + date auto-detection), analytical report card (KPI extraction + per-step charts + markdown export), markdown answer card (remark-gfm with table support) |
 | `components/approval/` | SQL review/edit/approve/reject dialog |
-| `components/session/` | shadcn sidebar with create/switch/delete sessions |
-| `lib/` | API client, TypeScript types mirroring backend models, SSE event constants with visibility flags |
+| `components/session/` | shadcn sidebar with create/switch/delete sessions, searchable schema browser (table/column search, dot-prefix grouping, click-to-query) |
+| `lib/` | API client, TypeScript types mirroring backend models, SSE event constants with visibility flags, export utilities (CSV/JSON/SQL/Markdown) |
 
 ### Security (enforce during code review)
 
