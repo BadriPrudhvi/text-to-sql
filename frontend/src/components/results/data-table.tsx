@@ -11,7 +11,8 @@ import {
   createColumnHelper,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { exportCSV, exportJSON } from "@/lib/export";
 import {
   Table,
   TableBody,
@@ -90,6 +91,24 @@ function DataTableInner({
         <Badge variant="secondary" className="text-xs">
           {data.length} row{data.length !== 1 ? "s" : ""}
         </Badge>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={() => exportCSV(data)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Download as CSV"
+          >
+            <Download className="h-3 w-3" />
+            CSV
+          </button>
+          <button
+            onClick={() => exportJSON(data)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Download as JSON"
+          >
+            <Download className="h-3 w-3" />
+            JSON
+          </button>
+        </div>
       </div>
       <div className="rounded-md border overflow-x-auto transition-colors hover:border-foreground/15">
         <Table>
