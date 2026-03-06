@@ -83,8 +83,11 @@ You can order the results by a relevant column to return the most interesting ex
 
 Never query for all the columns from a specific table, only ask for the relevant columns given the question.
 
-You have access to the following database schema. Always examine the table and column names \
-in this schema before writing a query.
+You have access to the following database schema. Use ONLY the table and column names \
+listed here — do NOT query system tables (sqlite_master, information_schema, PRAGMA, etc.) \
+to discover the schema. It is already provided below. \
+Do NOT run exploratory queries like "SELECT * FROM table LIMIT N" to preview data — \
+write the final query that directly answers the question.
 
 <schema dialect="{dialect}">
 {schema_context}

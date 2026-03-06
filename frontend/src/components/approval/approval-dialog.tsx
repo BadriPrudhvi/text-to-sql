@@ -76,7 +76,7 @@ export function ApprovalDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -88,29 +88,31 @@ export function ApprovalDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {validationErrors.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {validationErrors.map((err, i) => (
-              <Badge key={i} variant="destructive" className="text-xs">
-                {err}
-              </Badge>
-            ))}
+        <div className="flex-1 overflow-y-auto space-y-4">
+          {validationErrors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {validationErrors.map((err, i) => (
+                <Badge key={i} variant="destructive" className="text-xs">
+                  {err}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium">SQL Query</label>
+            <Textarea
+              value={editedSql}
+              onChange={(e) => setEditedSql(e.target.value)}
+              className="mt-1.5 min-h-[120px] font-mono text-sm"
+              disabled={isSubmitting}
+            />
           </div>
-        )}
 
-        <div>
-          <label className="text-sm font-medium">SQL Query</label>
-          <Textarea
-            value={editedSql}
-            onChange={(e) => setEditedSql(e.target.value)}
-            className="mt-1.5 min-h-[120px] font-mono text-sm"
-            disabled={isSubmitting}
-          />
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
         </div>
-
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
 
         <DialogFooter>
           <Button

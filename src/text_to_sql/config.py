@@ -47,10 +47,10 @@ class Settings(BaseSettings):
     bigquery_max_concurrent: int = 15
 
     # LLM Models
-    default_model: str = "claude-opus-4-6"
-    secondary_model: str = "gemini-3-pro-preview"
+    default_model: str = "claude-sonnet-4-6"
+    secondary_model: str = "gemini-3.1-pro-preview"
     fallback_model: str = "gpt-4o"
-    light_model: str = ""  # Fast/cheap model for classification and simple SQL. Falls back to default_model if empty.
+    light_model: str = "gemini-2.5-flash"
     llm_max_tokens: int = 8192
     llm_temperature: float = 0.0
 
@@ -107,6 +107,17 @@ class Settings(BaseSettings):
     def normalize_db_type(cls, v: str) -> str:
         if isinstance(v, str):
             return v.lower()
+        return v
+
+    @field_validator(
+        "default_model", "secondary_model", "fallback_model", "light_model",
+        mode="before",
+    )
+    @classmethod
+    def strip_inline_comments(cls, v: str) -> str:
+        """Strip inline # comments that pydantic-settings doesn't handle."""
+        if isinstance(v, str) and "#" in v:
+            v = v.split("#")[0].strip()
         return v
 
 

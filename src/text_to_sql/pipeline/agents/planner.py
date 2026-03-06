@@ -10,7 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
 
-from text_to_sql.pipeline.agents import extract_user_question
+from text_to_sql.pipeline.agents import extract_text, extract_user_question
 from text_to_sql.pipeline.agents.models import AnalysisPlan
 from text_to_sql.pipeline.agents.prompts import PLANNER_PROMPT
 
@@ -35,7 +35,7 @@ def create_plan_analysis_node(
         schema_context = ""
         for msg in state["messages"]:
             if isinstance(msg, SystemMessage):
-                schema_context = str(msg.content)
+                schema_context = extract_text(msg.content)
                 break
 
         prompt = PLANNER_PROMPT.format(

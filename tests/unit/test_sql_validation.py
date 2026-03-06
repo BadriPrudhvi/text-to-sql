@@ -36,6 +36,25 @@ class TestCheckReadOnly:
         assert len(errors) == 1
         assert "Empty" in errors[0]
 
+    def test_blocks_sqlite_master(self) -> None:
+        errors = check_read_only("SELECT name FROM sqlite_master WHERE type='table'")
+        assert len(errors) == 1
+        assert "sqlite_master" in errors[0]
+
+    def test_blocks_sqlite_schema(self) -> None:
+        errors = check_read_only("SELECT * FROM sqlite_schema")
+        assert len(errors) == 1
+        assert "sqlite_master" in errors[0]
+
+    def test_blocks_information_schema(self) -> None:
+        errors = check_read_only("SELECT * FROM information_schema.tables")
+        assert len(errors) == 1
+        assert "information_schema" in errors[0]
+
+    def test_blocks_sqlite_master_case_insensitive(self) -> None:
+        errors = check_read_only("SELECT name FROM SQLITE_MASTER")
+        assert len(errors) == 1
+
 
 class TestCleanLlmSql:
     """Tests for clean_llm_sql utility."""
@@ -139,14 +158,14 @@ class TestSqliteValidateSql:
     @pytest.mark.asyncio
     async def test_dollar_sign_in_string_literal(self, backend: SqliteBackend) -> None:
         """SQL with $ in string literals should not cause KeyError."""
-        sql = "SELECT * FROM sqlite_master WHERE name = '$test'"
+        sql = "SELECT '$test' AS val"
         errors = await backend.validate_sql(sql)
         assert errors == []
 
     @pytest.mark.asyncio
     async def test_colon_in_string_literal(self, backend: SqliteBackend) -> None:
         """SQL with :word in string literals should not cause bind param errors."""
-        sql = "SELECT * FROM sqlite_master WHERE name = ':placeholder'"
+        sql = "SELECT ':placeholder' AS val"
         errors = await backend.validate_sql(sql)
         assert errors == []
 
@@ -234,3 +253,25 @@ class TestDialectIdentifierValidation:
 
     def test_default_rejects_dot(self) -> None:
         assert validate_identifier("schema.table") is False
+
+
+class TestExtractText:
+    """Tests for extract_text helper that normalizes Gemini content blocks."""
+
+    def test_plain_string(self) -> None:
+        from text_to_sql.pipeline.agents import extract_text
+        assert extract_text("hello world") == "hello world"
+
+    def test_list_of_text_blocks(self) -> None:
+        from text_to_sql.pipeline.agents import extract_text
+        content = [{"type": "text", "text": "line 1"}, {"type": "text", "text": "line 2"}]
+        assert extract_text(content) == "line 1\nline 2"
+
+    def test_empty_list(self) -> None:
+        from text_to_sql.pipeline.agents import extract_text
+        assert extract_text([]) == ""
+
+    def test_mixed_block_types(self) -> None:
+        from text_to_sql.pipeline.agents import extract_text
+        content = [{"type": "text", "text": "hello"}, {"type": "other", "data": "x"}]
+        assert extract_text(content) == "hello\n"

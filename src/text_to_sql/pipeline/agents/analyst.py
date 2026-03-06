@@ -69,7 +69,9 @@ def create_synthesize_analysis_node(
         response = await invoke_with_retry(
             chat_model, [HumanMessage(content=prompt)]
         )
-        answer = str(response.content)
+        from text_to_sql.pipeline.agents import extract_text
+
+        answer = extract_text(response.content)
 
         logger.info("analysis_synthesized", answer_length=len(answer))
         writer({"event": "analysis_complete", "answer": answer})
