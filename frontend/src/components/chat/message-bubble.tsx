@@ -118,7 +118,7 @@ function AssistantContent({
         )}
 
         {queryResponse?.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
-          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+          <ReportCard queryResponse={queryResponse} />
         ) : queryResponse?.answer ? (
           <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse?.result?.length} />
         ) : null}
@@ -168,7 +168,7 @@ function AssistantContent({
           <ResultChart data={queryResponse.result} />
         )}
         {queryResponse.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
-          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+          <ReportCard queryResponse={queryResponse} />
         ) : queryResponse.answer ? (
           <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse.result?.length} />
         ) : null}

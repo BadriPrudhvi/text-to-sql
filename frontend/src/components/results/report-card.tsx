@@ -79,11 +79,10 @@ function extractChartableSteps(analysisSteps: Record<string, unknown>[]): Charta
 
 interface ReportCardProps {
   queryResponse: QueryResponse;
-  question: string;
 }
 
-export function ReportCard({ queryResponse, question }: ReportCardProps) {
-  const { answer, analysis_steps } = queryResponse;
+export function ReportCard({ queryResponse }: ReportCardProps) {
+  const { answer, analysis_steps, question } = queryResponse;
   const steps = useMemo(() => analysis_steps ?? [], [analysis_steps]);
 
   const kpis = useMemo(() => extractKPIs(steps), [steps]);
@@ -103,12 +102,9 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Report header */}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold leading-snug line-clamp-2">
-          {question}
-        </h3>
-        {answer && (
+      {/* Export button */}
+      {answer && (
+        <div className="flex justify-end">
           <button
             onClick={handleExport}
             className="flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -117,8 +113,8 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
             <FileDown className="h-3.5 w-3.5" />
             Export
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* KPI cards */}
       {kpis.length > 0 && (
