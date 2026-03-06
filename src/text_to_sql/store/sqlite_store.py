@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS query_records (
     result TEXT,
     answer TEXT,
     error TEXT,
+    query_type TEXT DEFAULT 'simple',
+    analysis_plan TEXT,
+    analysis_steps TEXT,
     created_at TEXT NOT NULL,
     approved_at TEXT,
     executed_at TEXT
@@ -54,6 +57,9 @@ def _record_to_row(record: QueryRecord) -> dict:
         "result": json.dumps(record.result, default=str) if record.result is not None else None,
         "answer": record.answer,
         "error": record.error,
+        "query_type": record.query_type,
+        "analysis_plan": json.dumps(record.analysis_plan) if record.analysis_plan is not None else None,
+        "analysis_steps": json.dumps(record.analysis_steps, default=str) if record.analysis_steps is not None else None,
         "created_at": record.created_at.isoformat(),
         "approved_at": _serialize_dt(record.approved_at),
         "executed_at": _serialize_dt(record.executed_at),
@@ -72,9 +78,12 @@ def _row_to_record(row: aiosqlite.Row) -> QueryRecord:
         result=json.loads(row[7]) if row[7] else None,
         answer=row[8],
         error=row[9],
-        created_at=datetime.fromisoformat(row[10]),
-        approved_at=_deserialize_dt(row[11]),
-        executed_at=_deserialize_dt(row[12]),
+        query_type=row[10] or "simple",
+        analysis_plan=json.loads(row[11]) if row[11] else None,
+        analysis_steps=json.loads(row[12]) if row[12] else None,
+        created_at=datetime.fromisoformat(row[13]),
+        approved_at=_deserialize_dt(row[14]),
+        executed_at=_deserialize_dt(row[15]),
     )
 
 
@@ -103,9 +112,11 @@ class SQLiteQueryStore:
             """INSERT OR REPLACE INTO query_records
             (id, session_id, natural_language, database_type, generated_sql,
              validation_errors, approval_status, result, answer, error,
+             query_type, analysis_plan, analysis_steps,
              created_at, approved_at, executed_at)
             VALUES (:id, :session_id, :natural_language, :database_type, :generated_sql,
                     :validation_errors, :approval_status, :result, :answer, :error,
+                    :query_type, :analysis_plan, :analysis_steps,
                     :created_at, :approved_at, :executed_at)""",
             row,
         )

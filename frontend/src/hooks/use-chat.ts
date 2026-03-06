@@ -41,6 +41,7 @@ export function useChat(sessionId: string | null) {
             ),
             queryResponse: {
               ...q,
+              query_id: q.id as string,
               question: q.natural_language as string,
             } as unknown as QueryResponse,
           });
@@ -118,14 +119,14 @@ export function useChat(sessionId: string | null) {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       stream.startStream(sid, content);
     },
-    [sessionId, stream]
+    [sessionId, stream.isStreaming, stream.startStream]
   );
 
-  // Reset send guard when streaming starts
+  // Reset send guard when streaming state changes
   useEffect(() => {
-    if (stream.isStreaming) {
-      sendingRef.current = false;
-    }
+    if (stream.isStreaming || !sendingRef.current) return;
+    // Streaming ended (or never started) — reset the guard
+    sendingRef.current = false;
   }, [stream.isStreaming]);
 
   // Update assistant message after approval

@@ -99,12 +99,7 @@ class Settings(BaseSettings):
     langsmith_api_key: SecretStr = SecretStr("")
     langsmith_project: str = "text-to-sql"
 
-    # Sessions
-    session_timeout_seconds: int = 3600
-
     # App
-    app_host: str = "0.0.0.0"
-    app_port: int = 8000
     log_level: str = "INFO"
 
     @field_validator("primary_db_type", mode="before")

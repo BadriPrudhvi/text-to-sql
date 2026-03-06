@@ -13,6 +13,9 @@ async def approve_query(
     query_id: str, body: ApprovalRequest, request: Request
 ) -> ApprovalResponse:
     """Approve or reject a pending SQL query. Approved queries are auto-executed."""
+    rate_limiter = request.app.state.rate_limiter
+    if rate_limiter and not rate_limiter.check(request.client.host if request.client else "unknown"):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
     orchestrator = request.app.state.orchestrator
     try:
         if body.approved:

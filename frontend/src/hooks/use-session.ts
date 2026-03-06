@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { createSession } from "@/lib/api";
 import type { Session } from "@/lib/types";
 

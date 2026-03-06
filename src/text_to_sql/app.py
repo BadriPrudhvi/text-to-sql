@@ -111,7 +111,6 @@ def create_app() -> FastAPI:
         app.state.settings = settings
         app.state.db_backend = db_backend
         app.state.schema_cache = schema_cache
-        app.state.chat_model = chat_model
         app.state.query_store = query_store
         app.state.session_store = session_store
         app.state.orchestrator = orchestrator
@@ -122,6 +121,8 @@ def create_app() -> FastAPI:
         yield
 
         await db_backend.close()
+        if hasattr(checkpointer, "aclose"):
+            await checkpointer.aclose()
         if stores.get("cleanup"):
             await stores["cleanup"]()
 
