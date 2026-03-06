@@ -258,13 +258,18 @@ export function useSSEStream() {
         });
       }
 
-      es.onerror = () => {
+      es.onerror = (evt) => {
         es.close();
         eventSourceRef.current = null;
+        const detail =
+          (evt as ErrorEvent).message ||
+          (es.readyState === EventSource.CONNECTING
+            ? "Connection failed. Is the backend running?"
+            : "Connection lost. Please try again.");
         setState((prev) => ({
           ...prev,
           isStreaming: false,
-          error: prev.error || "Connection lost. Please try again.",
+          error: prev.error || detail,
         }));
       };
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import {
   useReactTable,
@@ -33,21 +33,23 @@ const columnHelper = createColumnHelper<Record<string, unknown>>();
 export function DataTable({ data }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  if (!data || data.length === 0) return null;
+  const columns = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    return Object.keys(data[0]).map((key) =>
+      columnHelper.accessor(key, {
+        header: key,
+        cell: (info) => {
+          const val = info.getValue();
+          if (val === null || val === undefined) {
+            return <span className="text-muted-foreground italic">null</span>;
+          }
+          return String(val);
+        },
+      })
+    );
+  }, [data]);
 
-  const keys = Object.keys(data[0]);
-  const columns = keys.map((key) =>
-    columnHelper.accessor(key, {
-      header: key,
-      cell: (info) => {
-        const val = info.getValue();
-        if (val === null || val === undefined) {
-          return <span className="text-muted-foreground italic">null</span>;
-        }
-        return String(val);
-      },
-    })
-  );
+  if (!data || data.length === 0) return null;
 
   return (
     <DataTableInner

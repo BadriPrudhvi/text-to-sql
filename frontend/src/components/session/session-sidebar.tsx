@@ -84,7 +84,9 @@ export function SessionSidebar({
                       showOnHover
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteSession(session.id);
+                        if (window.confirm("Delete this conversation?")) {
+                          onDeleteSession(session.id);
+                        }
                       }}
                     >
                       <Trash2 className="text-sidebar-foreground/50 hover:text-destructive" />

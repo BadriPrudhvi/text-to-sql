@@ -12,7 +12,7 @@ from text_to_sql.api.router import api_router
 from text_to_sql.cache.query_cache import QueryCache
 from text_to_sql.config import get_settings
 from text_to_sql.db.factory import create_database_backend
-from text_to_sql.llm.router import create_chat_model
+from text_to_sql.llm.router import create_chat_model, create_light_chat_model
 from text_to_sql.logging import setup_logging
 from text_to_sql.mcp.tools import create_mcp_server
 from text_to_sql.observability.metrics import PipelineMetrics
@@ -42,9 +42,6 @@ def create_app() -> FastAPI:
         db_backend = await create_database_backend(settings)
         schema_cache = SchemaCache(ttl_seconds=settings.schema_cache_ttl_seconds)
         chat_model = create_chat_model(settings)
-
-        # Create lightweight model for classification and simple SQL
-        from text_to_sql.llm.router import create_light_chat_model
 
         light_chat_model = create_light_chat_model(settings)
 
@@ -107,13 +104,13 @@ def create_app() -> FastAPI:
             query_store=query_store,
             session_store=session_store,
             query_cache=query_cache,
+            schema_hash=db_backend.backend_type,
             database_type=db_backend.backend_type,
         )
 
         app.state.settings = settings
         app.state.db_backend = db_backend
         app.state.schema_cache = schema_cache
-        app.state.chat_model = chat_model
         app.state.query_store = query_store
         app.state.session_store = session_store
         app.state.orchestrator = orchestrator
@@ -124,6 +121,8 @@ def create_app() -> FastAPI:
         yield
 
         await db_backend.close()
+        if hasattr(checkpointer, "aclose"):
+            await checkpointer.aclose()
         if stores.get("cleanup"):
             await stores["cleanup"]()
 

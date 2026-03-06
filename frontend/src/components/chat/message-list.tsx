@@ -21,7 +21,7 @@ export function MessageList({ messages, onApprovalNeeded, onSendMessage, tables 
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages.length]);
 
   if (messages.length === 0) {
     const questions = generateQuickQuestions(tables);

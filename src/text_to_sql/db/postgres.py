@@ -120,8 +120,12 @@ class PostgresBackend:
                 if timeout_seconds:
                     timeout_ms = int(timeout_seconds * 1000)
                     await conn.execute(text("SET statement_timeout = :timeout"), {"timeout": timeout_ms})
-                result = await conn.exec_driver_sql(sql)
-                return [dict(row._mapping) for row in result]
+                try:
+                    result = await conn.exec_driver_sql(sql)
+                    return [dict(row._mapping) for row in result]
+                finally:
+                    if timeout_seconds:
+                        await conn.execute(text("SET statement_timeout = 0"))
 
         if timeout_seconds:
             rows = await asyncio.wait_for(_run(), timeout=timeout_seconds + 5)

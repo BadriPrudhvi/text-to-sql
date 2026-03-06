@@ -38,16 +38,18 @@ export function SQLAccordion({ sql }: SQLAccordionProps) {
       highlightSQL(formattedSQL).then((html) => {
         if (!cancelled) setHighlighted(html);
       });
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [formattedSQL]);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(sql);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
   };
 
   if (!sql) return null;

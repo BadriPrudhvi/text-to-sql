@@ -18,9 +18,11 @@ export function AnswerCard({ answer, hideTable }: AnswerCardProps) {
   if (!answer) return null;
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(answer);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(answer);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
   };
 
   return (

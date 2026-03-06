@@ -9,11 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@next/swc-darwin-arm64": "^16.1.6",
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "jiti": "^2.6.1",
     "lucide-react": "^0.574.0",
     "motion": "^12.35.0",
     "next": "16.1.6",

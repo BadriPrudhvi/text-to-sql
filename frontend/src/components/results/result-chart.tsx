@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { BarChart3, ChevronLeft, ChevronRight, PieChartIcon, Table2, TrendingUp } from "lucide-react";
+import { BarChart3, PieChartIcon, Table2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   BarChart,
@@ -228,13 +228,10 @@ export function ResultChart({ data }: ResultChartProps) {
   const lineViable = useMemo(() => isLineViable(analysis, data.length, data), [analysis, data]);
 
   const [chartType, setChartType] = useState<ChartType | "hidden">(defaultType ?? "hidden");
-  const [tablePage, setTablePage] = useState(0);
-  const TABLE_PAGE_SIZE = 10;
 
   // Sync default when data changes
   useEffect(() => {
     setChartType(defaultType ?? "hidden");
-    setTablePage(0);
   }, [defaultType]);
 
   if (!defaultType) return null;
@@ -257,6 +254,21 @@ export function ResultChart({ data }: ResultChartProps) {
 
   const showChart = chartType !== "hidden";
 
+  if (!showChart) {
+    return (
+      <div className="flex justify-end">
+        <button
+          onClick={() => setChartType(defaultType ?? "bar")}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          title="Show chart"
+        >
+          <BarChart3 className="h-3.5 w-3.5" />
+          Show chart
+        </button>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -264,120 +276,59 @@ export function ResultChart({ data }: ResultChartProps) {
       transition={{ duration: 0.3 }}
     >
       <div className="flex justify-end gap-1 mb-1">
-        {showChart && (
-          <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+          <button
+            onClick={() => setChartType("bar")}
+            className={cn(
+              "rounded p-1 transition-colors",
+              chartType === "bar"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            title="Bar chart"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+          </button>
+          {lineViable && (
             <button
-              onClick={() => setChartType("bar")}
+              onClick={() => setChartType("line")}
               className={cn(
                 "rounded p-1 transition-colors",
-                chartType === "bar"
+                chartType === "line"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               )}
-              title="Bar chart"
+              title="Line chart"
             >
-              <BarChart3 className="h-3.5 w-3.5" />
+              <TrendingUp className="h-3.5 w-3.5" />
             </button>
-            {lineViable && (
-              <button
-                onClick={() => setChartType("line")}
-                className={cn(
-                  "rounded p-1 transition-colors",
-                  chartType === "line"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                title="Line chart"
-              >
-                <TrendingUp className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {pieViable && (
-              <button
-                onClick={() => setChartType("pie")}
-                className={cn(
-                  "rounded p-1 transition-colors",
-                  chartType === "pie"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                title="Pie chart"
-              >
-                <PieChartIcon className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-        <button
-          onClick={() => setChartType(showChart ? "hidden" : (defaultType ?? "bar"))}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          title={showChart ? "Hide chart" : "Show chart"}
-        >
-          {showChart ? (
-            <Table2 className="h-3.5 w-3.5" />
-          ) : (
-            <BarChart3 className="h-3.5 w-3.5" />
           )}
-          {showChart ? "Table only" : "Show chart"}
+          {pieViable && (
+            <button
+              onClick={() => setChartType("pie")}
+              className={cn(
+                "rounded p-1 transition-colors",
+                chartType === "pie"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Pie chart"
+            >
+              <PieChartIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => setChartType("hidden")}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          title="Hide chart"
+        >
+          <Table2 className="h-3.5 w-3.5" />
+          Hide chart
         </button>
       </div>
 
-      {!showChart && (() => {
-        const totalPages = Math.ceil(chartData.length / TABLE_PAGE_SIZE);
-        const pageRows = chartData.slice(tablePage * TABLE_PAGE_SIZE, (tablePage + 1) * TABLE_PAGE_SIZE);
-        return (
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 border-b">
-                <tr>
-                  {[labelKey, ...valueKeys].map((col) => (
-                    <th key={col} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {pageRows.map((row, i) => (
-                  <tr key={i} className="hover:bg-muted/50 transition-colors">
-                    {[labelKey, ...valueKeys].map((col) => (
-                      <td key={col} className="px-3 py-1.5 whitespace-nowrap">
-                        {typeof row[col] === "number" ? (row[col] as number).toLocaleString() : String(row[col] ?? "")}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-3 py-1.5 border-t">
-                <p className="text-[10px] text-muted-foreground">
-                  Page {tablePage + 1} of {totalPages}
-                </p>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setTablePage((p) => p - 1)}
-                    disabled={tablePage === 0}
-                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setTablePage((p) => p + 1)}
-                    disabled={tablePage >= totalPages - 1}
-                    className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {showChart && (
-        <div className="h-[280px] w-full rounded-md border border-transparent transition-colors hover:border-foreground/10 p-1">
+      <div className="h-[280px] w-full rounded-md border border-transparent transition-colors hover:border-foreground/10 p-1">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "line" ? (
               <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -458,7 +409,6 @@ export function ResultChart({ data }: ResultChartProps) {
             )}
           </ResponsiveContainer>
         </div>
-      )}
     </motion.div>
   );
 }

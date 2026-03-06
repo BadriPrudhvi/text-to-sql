@@ -51,14 +51,6 @@ interface ChartableStep {
   data: Record<string, unknown>[];
 }
 
-const ACTION_VERB_RE = /^(calculate|compute|determine|find|get|identify|list|rank|retrieve|show|fetch|count|aggregate|analyze|compare|extract|measure|query|select|summarize|look up)\s+/i;
-
-function cleanStepTitle(description: string): string {
-  const cleaned = description.replace(ACTION_VERB_RE, "");
-  // Capitalize first letter
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
 function extractChartableSteps(analysisSteps: Record<string, unknown>[]): ChartableStep[] {
   const chartable: ChartableStep[] = [];
 
@@ -87,11 +79,10 @@ function extractChartableSteps(analysisSteps: Record<string, unknown>[]): Charta
 
 interface ReportCardProps {
   queryResponse: QueryResponse;
-  question: string;
 }
 
-export function ReportCard({ queryResponse, question }: ReportCardProps) {
-  const { answer, analysis_steps } = queryResponse;
+export function ReportCard({ queryResponse }: ReportCardProps) {
+  const { answer, analysis_steps, question } = queryResponse;
   const steps = useMemo(() => analysis_steps ?? [], [analysis_steps]);
 
   const kpis = useMemo(() => extractKPIs(steps), [steps]);
@@ -111,12 +102,9 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Report header */}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold leading-snug line-clamp-2">
-          {question}
-        </h3>
-        {answer && (
+      {/* Export button */}
+      {answer && (
+        <div className="flex justify-end">
           <button
             onClick={handleExport}
             className="flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -125,8 +113,8 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
             <FileDown className="h-3.5 w-3.5" />
             Export
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* KPI cards */}
       {kpis.length > 0 && (
@@ -150,10 +138,7 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
 
       {/* Per-step mini charts */}
       {chartableSteps.map((step, i) => (
-        <div key={i} className="rounded-lg border bg-card p-3 space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground">
-            {cleanStepTitle(step.description)}
-          </p>
+        <div key={i} className="space-y-1">
           <ResultChart data={step.data} />
         </div>
       ))}

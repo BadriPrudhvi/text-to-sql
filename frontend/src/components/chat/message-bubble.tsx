@@ -35,7 +35,7 @@ export function MessageBubble({ message, onApprovalNeeded }: MessageBubbleProps)
 
       <div
         className={cn(
-          "max-w-[600px] rounded-lg px-4 py-3",
+          "max-w-[min(85%,720px)] rounded-lg px-4 py-3",
           isUser
             ? "bg-primary text-primary-foreground"
             : "border bg-background transition-colors hover:border-foreground/15"
@@ -118,7 +118,7 @@ function AssistantContent({
         )}
 
         {queryResponse?.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
-          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+          <ReportCard queryResponse={queryResponse} />
         ) : queryResponse?.answer ? (
           <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse?.result?.length} />
         ) : null}
@@ -168,7 +168,7 @@ function AssistantContent({
           <ResultChart data={queryResponse.result} />
         )}
         {queryResponse.answer && queryResponse.query_type === "analytical" && queryResponse.analysis_steps ? (
-          <ReportCard queryResponse={queryResponse} question={queryResponse.question} />
+          <ReportCard queryResponse={queryResponse} />
         ) : queryResponse.answer ? (
           <AnswerCard answer={queryResponse.answer} hideTable={!!queryResponse.result?.length} />
         ) : null}
