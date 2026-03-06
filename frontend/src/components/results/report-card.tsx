@@ -51,14 +51,6 @@ interface ChartableStep {
   data: Record<string, unknown>[];
 }
 
-const ACTION_VERB_RE = /^(calculate|compute|determine|find|get|identify|list|rank|retrieve|show|fetch|count|aggregate|analyze|compare|extract|measure|query|select|summarize|look up)\s+/i;
-
-function cleanStepTitle(description: string): string {
-  const cleaned = description.replace(ACTION_VERB_RE, "");
-  // Capitalize first letter
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
 function extractChartableSteps(analysisSteps: Record<string, unknown>[]): ChartableStep[] {
   const chartable: ChartableStep[] = [];
 
@@ -150,10 +142,7 @@ export function ReportCard({ queryResponse, question }: ReportCardProps) {
 
       {/* Per-step mini charts */}
       {chartableSteps.map((step, i) => (
-        <div key={i} className="rounded-lg border bg-card p-3 space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground">
-            {cleanStepTitle(step.description)}
-          </p>
+        <div key={i} className="space-y-1">
           <ResultChart data={step.data} />
         </div>
       ))}
