@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
 
 from text_to_sql.db.base import DatabaseBackend, clean_llm_sql
+from text_to_sql.pipeline.agents import extract_text
 from text_to_sql.pipeline.agents.models import StepSQLResult
 from text_to_sql.pipeline.agents.prompts import STEP_SQL_PROMPT
 
@@ -65,7 +66,7 @@ def create_execute_plan_step_node(
         schema_context = ""
         for msg in state["messages"]:
             if isinstance(msg, SystemMessage):
-                schema_context = str(msg.content)
+                schema_context = extract_text(msg.content)
                 break
 
         # Build previous results context
@@ -111,12 +112,12 @@ def create_execute_plan_step_node(
                     sql = result.sql.strip()
                 else:
                     # Structured output returned unexpected type — fall back
-                    sql = str(result.content).strip() if hasattr(result, "content") else str(result).strip()
+                    sql = extract_text(result.content).strip() if hasattr(result, "content") else str(result).strip()
             except Exception:
                 # Layer 2: Fall back to raw text
                 logger.debug("structured_output_fallback", step_index=current_step)
                 response = await invoke_with_retry(chat_model, messages)
-                sql = str(response.content).strip()
+                sql = extract_text(response.content).strip()
 
             # Defense in depth: clean any residual LLM explanation text
             sql = clean_llm_sql(sql)
@@ -185,10 +186,10 @@ def create_execute_plan_step_node(
                     if isinstance(correction_result, StepSQLResult):
                         sql = clean_llm_sql(correction_result.sql.strip())
                     else:
-                        sql = clean_llm_sql(str(correction_result.content).strip() if hasattr(correction_result, "content") else str(correction_result).strip())
+                        sql = clean_llm_sql(extract_text(correction_result.content).strip() if hasattr(correction_result, "content") else str(correction_result).strip())
                 except Exception:
                     response = await invoke_with_retry(chat_model, correction_messages)
-                    sql = clean_llm_sql(str(response.content).strip())
+                    sql = clean_llm_sql(extract_text(response.content).strip())
         except Exception as e:
             step_result["error"] = str(e)
             logger.warning(

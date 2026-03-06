@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 
-from tests.conftest import FakeToolChatModel, make_agent_responses
+from tests.conftest import FakeToolChatModel, make_agent_responses, make_tool_call_msg
 from text_to_sql.db.factory import create_database_backend
 from text_to_sql.mcp.tools import create_mcp_server
 from text_to_sql.pipeline.agents.models import QueryClassification
@@ -121,9 +121,10 @@ async def test_generate_sql_returns_unique_ids(mcp_client) -> None:
 @pytest.fixture
 async def pending_mcp_server():
     """MCP server where LLM returns SQL referencing a nonexistent table (triggers validation errors)."""
-    server, db_backend = await _make_mcp_server(
-        make_agent_responses("SELECT count(*) FROM nonexistent_table", "There is 1 user."),
-    )
+    # Tool-call-only messages for self-correction retries, then answer messages for post-approval
+    bad_sql = [make_tool_call_msg("SELECT count(*) FROM nonexistent_table", f"call_{i}") for i in range(10)]
+    post_approve = make_agent_responses("SELECT count(*) FROM users", "There is 1 user.", n=10)
+    server, db_backend = await _make_mcp_server(bad_sql + post_approve)
     yield server
     await db_backend.close()
 

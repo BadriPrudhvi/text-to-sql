@@ -6,7 +6,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
-from tests.conftest import FakeToolChatModel, make_agent_responses
+from tests.conftest import FakeToolChatModel, make_answer_msg, make_tool_call_msg
 from text_to_sql.pipeline.agents.models import QueryClassification
 
 _SIMPLE = {"QueryClassification": QueryClassification(query_type="simple", reasoning="test")}
@@ -18,8 +18,13 @@ async def pending_client():
 
     This triggers validation errors, which routes to human_approval (PENDING).
     """
+    # 2 tool_calls consumed during self-correction (max_correction_attempts=2),
+    # then answer messages for post-approval (run_query → validate_result → generate_query → END)
+    msgs = [make_tool_call_msg("SELECT count(*) FROM nonexistent_table", f"call_{i}") for i in range(2)]
+    msgs.append(make_answer_msg("There is 1 user."))
+    msgs.extend([make_answer_msg("There is 1 user.")] * 5)  # extras for reject test
     bad_sql_model = FakeToolChatModel(
-        messages=iter(make_agent_responses("SELECT count(*) FROM nonexistent_table", "There is 1 user.")),
+        messages=iter(msgs),
         structured_responses=_SIMPLE,
     )
 

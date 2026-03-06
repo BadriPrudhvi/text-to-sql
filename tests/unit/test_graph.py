@@ -72,11 +72,11 @@ async def test_safe_sql_auto_executes(compiled_graph) -> None:
 
 
 @pytest.mark.asyncio
-async def test_validation_errors_route_to_approval(mock_backend) -> None:
-    """SQL with validation errors should pause at human_approval interrupt."""
+async def test_validation_errors_self_correct_then_approve(mock_backend) -> None:
+    """SQL with validation errors should self-correct, then pause at human_approval if still failing."""
     mock_backend.validate_sql = AsyncMock(return_value=["Unknown table 'foo'"])
     model = FakeToolChatModel(
-        messages=iter([make_tool_call_msg("SELECT count(*) FROM foo")] * 10),
+        messages=iter([make_tool_call_msg("SELECT count(*) FROM foo", f"call_{i}") for i in range(20)]),
         structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
@@ -84,6 +84,7 @@ async def test_validation_errors_route_to_approval(mock_backend) -> None:
         schema_cache=SchemaCache(ttl_seconds=3600),
         chat_model=model,
         checkpointer=MemorySaver(),
+        max_correction_attempts=2,
     )
     config = {"configurable": {"thread_id": "test-val-err-1"}}
 
@@ -93,15 +94,21 @@ async def test_validation_errors_route_to_approval(mock_backend) -> None:
     )
 
     state = await graph.aget_state(config)
-    assert state.next  # paused at interrupt
+    assert state.next  # paused at interrupt after exhausting self-correction
+    assert state.values.get("correction_attempts") == 2
 
 
 @pytest.mark.asyncio
 async def test_graph_resume_approved(mock_backend) -> None:
     """Resuming with approved=True should execute the query and produce answer."""
-    mock_backend.validate_sql = AsyncMock(return_value=["some error"])
+    # Validation fails during self-correction (3 calls), then succeeds post-approval
+    validation_results = iter([["some error"]] * 3 + [[]] * 5)
+    mock_backend.validate_sql = AsyncMock(side_effect=lambda _: next(validation_results))
+    # 3 tool_calls for self-correction, 1 tool_call post-approval (passes validation), 1 answer
+    msgs = [make_tool_call_msg("SELECT count(*) AS total FROM users", f"call_{i}") for i in range(4)]
+    msgs.append(make_answer_msg("There are 42 users."))
     model = FakeToolChatModel(
-        messages=iter(make_agent_responses("SELECT count(*) AS total FROM users", "There are 42 users.")),
+        messages=iter(msgs),
         structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
@@ -130,7 +137,7 @@ async def test_graph_resume_rejected(mock_backend) -> None:
     """Resuming with approved=False should end without executing."""
     mock_backend.validate_sql = AsyncMock(return_value=["some error"])
     model = FakeToolChatModel(
-        messages=iter([make_tool_call_msg("SELECT count(*) AS total FROM users")] * 10),
+        messages=iter([make_tool_call_msg("SELECT count(*) AS total FROM users", f"call_{i}") for i in range(20)]),
         structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
@@ -157,9 +164,14 @@ async def test_graph_resume_rejected(mock_backend) -> None:
 @pytest.mark.asyncio
 async def test_graph_resume_with_modified_sql(mock_backend) -> None:
     """Resuming with modified SQL should use the new SQL."""
-    mock_backend.validate_sql = AsyncMock(return_value=["some error"])
+    # Validation fails during self-correction (3 calls), succeeds post-approval
+    validation_results = iter([["some error"]] * 3 + [[]] * 5)
+    mock_backend.validate_sql = AsyncMock(side_effect=lambda _: next(validation_results))
+    # 3 tool_calls for self-correction, 1 answer post-approval
+    msgs = [make_tool_call_msg("SELECT count(*) FROM bad_table", f"call_{i}") for i in range(3)]
+    msgs.append(make_answer_msg("There are 42 users."))
     model = FakeToolChatModel(
-        messages=iter(make_agent_responses("SELECT count(*) FROM bad_table", "There are 42 users.")),
+        messages=iter(msgs),
         structured_responses=_STRUCTURED,
     )
     graph = compile_pipeline(
@@ -181,7 +193,9 @@ async def test_graph_resume_with_modified_sql(mock_backend) -> None:
     )
 
     state = await graph.aget_state(config)
-    assert state.values.get("generated_sql") == "SELECT count(*) AS total FROM users"
+    # After approval, the pipeline executed the modified SQL and produced an answer
+    assert state.values.get("result") == [{"total": 42}]
+    assert state.values.get("answer") == "There are 42 users."
 
 
 @pytest.mark.asyncio

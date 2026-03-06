@@ -5,7 +5,7 @@ import type {
   SessionHistoryResponse,
 } from "./types";
 
-const BASE = "/api";
+const BASE = "/api/v1";
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);

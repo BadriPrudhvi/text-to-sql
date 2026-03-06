@@ -15,7 +15,7 @@ from langgraph.types import interrupt
 
 from text_to_sql.db.base import DatabaseBackend
 from text_to_sql.llm.prompts import SQL_AGENT_SYSTEM_PROMPT, get_few_shot_examples
-from text_to_sql.pipeline.agents import extract_user_question
+from text_to_sql.pipeline.agents import extract_text, extract_user_question
 from text_to_sql.pipeline.tools import create_run_query_tool
 from text_to_sql.schema.cache import SchemaCache
 from text_to_sql.schema.discovery import SchemaDiscoveryService
@@ -196,22 +196,44 @@ def build_pipeline_graph(
             logger.info("graph_sql_generated", sql=sql)
             writer({"event": "sql_generated", "sql": sql})
         elif isinstance(response, AIMessage) and response.content:
-            updates["answer"] = str(response.content)
+            updates["answer"] = extract_text(response.content)
             logger.info("graph_answer_generated", answer=updates["answer"][:100])
             writer({"event": "answer_generated", "answer": updates["answer"]})
 
         return updates
 
     async def check_query(state: SQLAgentState) -> dict:
-        """Validate the SQL from the last tool call."""
+        """Validate the SQL from the last tool call.
+
+        If validation fails and self-correction attempts remain, feed errors
+        back as a ToolMessage so the LLM can retry. Otherwise, route to
+        human approval.
+        """
         writer = get_stream_writer()
         sql = state.get("generated_sql", "")
         errors = await db_backend.validate_sql(sql)
-        if errors:
-            logger.warning("graph_sql_validation_errors", errors=errors)
-            writer({"event": "validation_failed", "errors": errors})
-        else:
+        if not errors:
             writer({"event": "validation_passed"})
+            return {"validation_errors": []}
+
+        attempts = state.get("correction_attempts", 0)
+        logger.warning("graph_sql_validation_errors", errors=errors, attempt=attempts)
+        writer({"event": "validation_failed", "errors": errors})
+
+        if attempts < max_correction_attempts:
+            # Feed errors back to LLM for self-correction
+            tool_call_id = _last_tool_call_id(state["messages"])
+            error_feedback = ToolMessage(
+                content=f"SQL validation failed: {'; '.join(errors)}. Please fix the query using ONLY the schema provided in the system prompt.",
+                tool_call_id=tool_call_id,
+            )
+            writer({"event": "self_correction_triggered", "warnings": errors})
+            return {
+                "validation_errors": errors,
+                "correction_attempts": attempts + 1,
+                "messages": [error_feedback],
+            }
+
         return {"validation_errors": errors}
 
     async def human_approval(state: SQLAgentState) -> dict:
@@ -229,9 +251,11 @@ def build_pipeline_graph(
         if not approved:
             return {"error": "Query rejected by user."}
 
+        # Reset correction attempts so post-approval flow gets fresh retries
+        updates: dict[str, Any] = {"correction_attempts": 0, "validation_errors": []}
         if modified_sql:
-            return {"generated_sql": modified_sql}
-        return {}
+            updates["generated_sql"] = modified_sql
+        return updates
 
     async def run_query(state: SQLAgentState) -> dict:
         """Execute the SQL directly via db_backend and append a ToolMessage for the ReAct loop."""
@@ -329,9 +353,13 @@ def build_pipeline_graph(
         return END
 
     def route_after_check(state: SQLAgentState) -> str:
-        if state.get("validation_errors"):
-            return "human_approval"
-        return "run_query"
+        if not state.get("validation_errors"):
+            return "run_query"
+        # check_query adds a ToolMessage when self-correction attempts remain.
+        # If the last message is a ToolMessage (self-correction feedback), retry.
+        if state.get("correction_attempts", 0) < max_correction_attempts:
+            return "generate_query"
+        return "human_approval"
 
     def route_after_approval(state: SQLAgentState) -> str:
         if state.get("error"):
@@ -388,7 +416,7 @@ def build_pipeline_graph(
 
     # Simple path (unchanged)
     builder.add_conditional_edges("generate_query", should_continue, ["check_query", END])
-    builder.add_conditional_edges("check_query", route_after_check, ["run_query", "human_approval"])
+    builder.add_conditional_edges("check_query", route_after_check, ["run_query", "generate_query", "human_approval"])
     builder.add_conditional_edges("human_approval", route_after_approval, ["run_query", END])
     builder.add_edge("run_query", "validate_result")
     builder.add_edge("validate_result", "generate_query")

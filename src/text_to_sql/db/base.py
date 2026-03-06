@@ -74,6 +74,14 @@ def check_read_only(sql: str, *, dialect: str | None = None) -> list[str]:
     if first_word not in {"SELECT", "WITH", "EXPLAIN"}:
         return [f"Only SELECT/WITH queries are allowed, got: {first_word}"]
 
+    # Block system catalog / schema exploration queries — the schema is
+    # already provided in the prompt, so the LLM should not discover it.
+    upper = normalized.upper()
+    if any(cat in upper for cat in ("SQLITE_MASTER", "SQLITE_SCHEMA", "SQLITE_TEMP_MASTER")):
+        return ["Do not query system catalogs (sqlite_master). Use the schema provided in the prompt."]
+    if "INFORMATION_SCHEMA" in upper:
+        return ["Do not query information_schema. Use the schema provided in the prompt."]
+
     return []
 
 
