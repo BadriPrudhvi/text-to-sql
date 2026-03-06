@@ -12,8 +12,8 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.primary_db_type == DatabaseType.SQLITE
     assert settings.llm_temperature == 0.0
     assert settings.schema_cache_ttl_seconds == 3600
-    assert settings.default_model == "claude-opus-4-6"
-    assert settings.secondary_model == "gemini-3-pro-preview"
+    assert settings.default_model == "claude-sonnet-4-6"
+    assert settings.secondary_model == "gemini-3.1-pro-preview"
     assert settings.fallback_model == "gpt-4o"
 
 
@@ -70,10 +70,10 @@ def test_pool_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.bigquery_max_concurrent == 30
 
 
-def test_light_model_defaults_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_light_model_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
     settings = Settings(_env_file=None)
-    assert settings.light_model == ""
+    assert settings.light_model == "gemini-2.5-flash"
 
 
 def test_light_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,6 +81,15 @@ def test_light_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIGHT_MODEL", "gemini-3-1-flash-lite")
     settings = Settings(_env_file=None)
     assert settings.light_model == "gemini-3-1-flash-lite"
+
+
+def test_model_name_strips_inline_comments(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("LIGHT_MODEL", "claude-sonnet-4-6 # Fast/cheap model")
+    monkeypatch.setenv("DEFAULT_MODEL", "claude-opus-4-6# primary model")
+    settings = Settings(_env_file=None)
+    assert settings.light_model == "claude-sonnet-4-6"
+    assert settings.default_model == "claude-opus-4-6"
 
 
 def test_all_api_keys_default_empty(monkeypatch: pytest.MonkeyPatch) -> None:
