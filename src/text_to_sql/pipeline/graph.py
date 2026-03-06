@@ -88,11 +88,25 @@ def build_pipeline_graph(
         max_wait=llm_retry_max_wait,
     )
 
+    def _last_tool_call_id(messages: list) -> str:
+        """Find the tool_call_id from the last AIMessage with tool calls."""
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                return msg.tool_calls[0]["id"]
+        return "unknown"
+
     dialect = db_backend.backend_type
+    few_shot = get_few_shot_examples(dialect)
+
+    # Hoist stateless objects to closure scope (created once, not per-request)
+    from text_to_sql.schema.selector import TableSelector
+    from text_to_sql.pipeline.validators import ResultValidator
+
+    table_selector = TableSelector()
+    result_validator = ResultValidator()
 
     async def discover_schema(state: SQLAgentState) -> dict:
         """Discover database schema and inject as system message."""
-        from text_to_sql.schema.selector import TableSelector
 
         writer = get_stream_writer()
         writer({"event": "schema_discovery_started"})
@@ -101,22 +115,21 @@ def build_pipeline_graph(
         # Dynamic schema selection
         tables = schema.tables
         if schema_selection_mode != "none" and tables:
-            selector = TableSelector()
             user_question = extract_user_question(state["messages"])
 
             if user_question:
                 if schema_selection_mode == "llm":
-                    tables = await selector.select_by_llm(
+                    tables = await table_selector.select_by_llm(
                         user_question, tables, light_model,
                         max_tables=schema_max_selected_tables,
                     )
                 else:
-                    tables = selector.select_by_keywords(
+                    tables = table_selector.select_by_keywords(
                         user_question, tables,
                         max_tables=schema_max_selected_tables,
                     )
-                from text_to_sql.models.domain import SchemaInfo as _SI
-                schema = _SI(tables=tables, discovered_at=schema.discovered_at)
+                from text_to_sql.models.domain import SchemaInfo
+                schema = SchemaInfo(tables=tables, discovered_at=schema.discovered_at)
 
         # Budgeted schema rendering
         context = schema_service.schema_to_prompt_context_budgeted(schema, schema_budget)
@@ -128,7 +141,7 @@ def build_pipeline_graph(
                 dialect=dialect,
                 schema_context=context,
                 top_k=5,
-                few_shot_examples=get_few_shot_examples(dialect),
+                few_shot_examples=few_shot,
             )
         )
         # Remove any prior SystemMessages to avoid "multiple non-consecutive
@@ -226,11 +239,7 @@ def build_pipeline_graph(
         sql = state.get("generated_sql", "")
         writer({"event": "query_execution_started", "sql": sql})
 
-        tool_call_id = "unknown"
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, AIMessage) and msg.tool_calls:
-                tool_call_id = msg.tool_calls[0]["id"]
-                break
+        tool_call_id = _last_tool_call_id(state["messages"])
 
         try:
             result = await db_backend.execute_sql(sql, timeout_seconds=db_query_timeout_seconds)
@@ -266,17 +275,14 @@ def build_pipeline_graph(
 
     async def validate_result(state: SQLAgentState) -> dict:
         """Validate query results and feed warnings back to LLM for self-correction."""
-        from text_to_sql.pipeline.validators import ResultValidator
-
         writer = get_stream_writer()
 
         if state.get("correction_attempts", 0) >= max_correction_attempts:
             return {}
 
-        validator = ResultValidator()
         user_question = extract_user_question(state["messages"])
 
-        warnings = validator.validate(
+        warnings = result_validator.validate(
             state.get("generated_sql") or "",
             state.get("result"),
             user_question,
@@ -287,11 +293,7 @@ def build_pipeline_graph(
         logger.info("graph_result_validation_warnings", warnings=warnings)
         writer({"event": "self_correction_triggered", "warnings": warnings})
 
-        tool_call_id = "unknown"
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, AIMessage) and msg.tool_calls:
-                tool_call_id = msg.tool_calls[0]["id"]
-                break
+        tool_call_id = _last_tool_call_id(state["messages"])
 
         tool_msg = ToolMessage(
             content=f"Warning: {'; '.join(warnings)}. Please revise the query.",

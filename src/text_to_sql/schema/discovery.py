@@ -60,10 +60,6 @@ class SchemaDiscoveryService:
                 return True
         return False
 
-    def schema_to_prompt_context(self, schema: SchemaInfo) -> str:
-        """Format schema metadata as CREATE TABLE DDL for LLM context."""
-        return "\n\n".join(self._render_table_ddl(t) for t in schema.tables)
-
     def schema_to_prompt_context_budgeted(
         self, schema: SchemaInfo, max_tokens: int,
     ) -> str:

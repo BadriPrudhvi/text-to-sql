@@ -72,9 +72,6 @@ def get_few_shot_examples(dialect: str) -> str:
     return f"<examples>\n{_COMMON_EXAMPLES}\n\n{specific}\n</examples>"
 
 
-# Backward-compatible alias
-FEW_SHOT_EXAMPLES = get_few_shot_examples("sqlite")
-
 SQL_AGENT_SYSTEM_PROMPT = """\
 You are an agent designed to interact with a SQL database.
 Given an input question, create a syntactically correct {dialect} query to run \

@@ -45,6 +45,7 @@ def create_execute_plan_step_node(
     db_query_timeout_seconds: float | None = None,
 ) -> Callable[..., Any]:
     """Create the plan step execution node."""
+    structured_model = chat_model.with_structured_output(StepSQLResult)
 
     async def execute_plan_step(state: dict) -> dict:
         writer = get_stream_writer()
@@ -105,7 +106,6 @@ def create_execute_plan_step_node(
 
             # Layer 1: Try structured output (primary defense)
             try:
-                structured_model = chat_model.with_structured_output(StepSQLResult)
                 result = await invoke_with_retry(structured_model, messages)
                 if isinstance(result, StepSQLResult):
                     sql = result.sql.strip()
@@ -181,7 +181,6 @@ def create_execute_plan_step_node(
                 )
                 correction_messages = [HumanMessage(content=correction_prompt)]
                 try:
-                    structured_model = chat_model.with_structured_output(StepSQLResult)
                     correction_result = await invoke_with_retry(structured_model, correction_messages)
                     if isinstance(correction_result, StepSQLResult):
                         sql = clean_llm_sql(correction_result.sql.strip())

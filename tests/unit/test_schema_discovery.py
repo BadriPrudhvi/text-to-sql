@@ -79,7 +79,7 @@ def test_schema_to_prompt_context(
             )
         ]
     )
-    context = service.schema_to_prompt_context(schema)
+    context = service.schema_to_prompt_context_budgeted(schema, max_tokens=100000)
     assert "CREATE TABLE users" in context
     assert "id INTEGER NOT NULL" in context
     assert "name TEXT" in context
@@ -100,7 +100,7 @@ def test_schema_renders_table_description(
             )
         ]
     )
-    context = service.schema_to_prompt_context(schema)
+    context = service.schema_to_prompt_context_budgeted(schema, max_tokens=100000)
     assert "-- Registered application users" in context
     assert "CREATE TABLE users" in context
 
@@ -122,7 +122,7 @@ def test_schema_renders_column_description(
             )
         ]
     )
-    context = service.schema_to_prompt_context(schema)
+    context = service.schema_to_prompt_context_budgeted(schema, max_tokens=100000)
     assert "-- Primary key" in context
 
 
