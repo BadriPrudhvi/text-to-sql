@@ -97,7 +97,10 @@ def mock_chat_model() -> FakeToolChatModel:
 @pytest.fixture
 async def app(mock_chat_model: FakeToolChatModel):
     """Create a test FastAPI app with mocked LLM."""
-    with patch("text_to_sql.app.create_chat_model", return_value=mock_chat_model):
+    with (
+        patch("text_to_sql.app.create_chat_model", return_value=mock_chat_model),
+        patch("text_to_sql.app.create_light_chat_model", return_value=None),
+    ):
         from text_to_sql.app import create_app
 
         test_app = create_app()
