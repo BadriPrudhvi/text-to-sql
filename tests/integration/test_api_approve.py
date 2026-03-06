@@ -23,7 +23,10 @@ async def pending_client():
         structured_responses=_SIMPLE,
     )
 
-    with patch("text_to_sql.app.create_chat_model", return_value=bad_sql_model):
+    with (
+        patch("text_to_sql.app.create_chat_model", return_value=bad_sql_model),
+        patch("text_to_sql.app.create_light_chat_model", return_value=None),
+    ):
         from text_to_sql.app import create_app
 
         app = create_app()

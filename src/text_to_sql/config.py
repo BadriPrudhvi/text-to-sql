@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     secondary_model: str = "gemini-3-pro-preview"
     fallback_model: str = "gpt-4o"
     light_model: str = ""  # Fast/cheap model for classification and simple SQL. Falls back to default_model if empty.
-    llm_max_tokens: int = 4096
+    llm_max_tokens: int = 8192
     llm_temperature: float = 0.0
 
     # Schema Cache
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     schema_exclude_tables: list[str] = []
 
     # Context window management
-    context_max_tokens: int = 16000
+    context_max_tokens: int = 32000
     context_schema_budget_pct: float = 0.6
     context_history_max_messages: int = 10
 
