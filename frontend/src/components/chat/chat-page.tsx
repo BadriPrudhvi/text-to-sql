@@ -35,7 +35,7 @@ export function ChatPage() {
     updateLastAssistantMessage,
   } = useChat(activeSessionId);
 
-  const { tables, isLoading: schemaLoading } = useSchema();
+  const { tables, isLoading: schemaLoading, error: schemaError } = useSchema();
 
   // Approval dialog state
   const [approvalState, setApprovalState] = useState<{
@@ -125,6 +125,12 @@ export function ChatPage() {
           <div className="flex-1" />
           <HealthDot />
         </header>
+
+        {schemaError && (
+          <div className="mx-auto max-w-[720px] px-4 pt-2">
+            <p className="text-xs text-destructive">Schema load failed: {schemaError}</p>
+          </div>
+        )}
 
         {/* Messages */}
         <MessageList

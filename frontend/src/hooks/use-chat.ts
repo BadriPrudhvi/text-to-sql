@@ -39,7 +39,10 @@ export function useChat(sessionId: string | null) {
               (q.executed_at as string) ||
                 (q.created_at as string)
             ),
-            queryResponse: q as unknown as QueryResponse,
+            queryResponse: {
+              ...q,
+              question: q.natural_language as string,
+            } as unknown as QueryResponse,
           });
         }
         setMessages(loaded);

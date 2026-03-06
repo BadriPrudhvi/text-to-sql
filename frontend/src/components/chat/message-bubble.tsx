@@ -35,7 +35,7 @@ export function MessageBubble({ message, onApprovalNeeded }: MessageBubbleProps)
 
       <div
         className={cn(
-          "max-w-[600px] rounded-lg px-4 py-3",
+          "max-w-[min(85%,720px)] rounded-lg px-4 py-3",
           isUser
             ? "bg-primary text-primary-foreground"
             : "border bg-background transition-colors hover:border-foreground/15"

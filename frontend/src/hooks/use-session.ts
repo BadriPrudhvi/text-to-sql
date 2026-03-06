@@ -25,13 +25,9 @@ function saveSessions(sessions: Session[]) {
 }
 
 export function useSession() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<Session[]>(loadSessions);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-
-  useEffect(() => {
-    setSessions(loadSessions());
-  }, []);
 
   const newSession = useCallback(async () => {
     setIsCreating(true);

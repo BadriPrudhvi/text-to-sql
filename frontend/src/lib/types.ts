@@ -42,8 +42,8 @@ export interface SessionHistoryResponse {
 
 export interface HealthResponse {
   status: string;
-  database: string;
-  metrics?: Record<string, unknown>;
+  uptime_seconds: number;
+  metrics: Record<string, unknown>;
 }
 
 // Frontend types
@@ -68,6 +68,7 @@ export type SSEEventType =
   | "plan_step_sql_generated"
   | "plan_step_executed"
   | "plan_step_failed"
+  | "plan_step_correcting"
   | "analysis_synthesis_started"
   | "analysis_complete"
   | "analysis_validation_warning"

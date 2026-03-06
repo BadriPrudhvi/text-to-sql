@@ -47,8 +47,17 @@ def create_plan_analysis_node(
             structured_model, [HumanMessage(content=prompt)]
         )
 
-        # Truncate to max steps
+        # Truncate to max steps; guard against empty plans
         steps = result.steps[:max_plan_steps]
+        if not steps:
+            logger.warning("analysis_plan_empty", question=question)
+            writer({"event": "analysis_plan_created", "step_count": 0, "steps": []})
+            return {
+                "analysis_plan": [],
+                "plan_results": [],
+                "current_step": 0,
+            }
+
         plan = [
             {
                 "description": step.description,

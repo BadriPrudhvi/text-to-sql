@@ -30,6 +30,17 @@ def create_synthesize_analysis_node(
         question = extract_user_question(state["messages"])
         plan_results = state.get("plan_results") or []
 
+        # Guard: if every step failed, return an error instead of hallucinating
+        successful = [r for r in plan_results if not r.get("error")]
+        if plan_results and not successful:
+            msg = "All analysis steps failed. Unable to produce a reliable answer."
+            logger.warning("analysis_all_steps_failed", step_count=len(plan_results))
+            writer({"event": "analysis_complete", "answer": msg})
+            return {
+                "answer": msg,
+                "messages": [AIMessage(content=msg)],
+            }
+
         # Build results context with bounded row counts
         _MAX_ROWS_PER_STEP = 20
         parts = []

@@ -37,10 +37,13 @@ export function ApprovalDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync editedSql when dialog opens with new SQL
+  // Reset editedSql whenever the dialog opens or SQL changes
   useEffect(() => {
-    setEditedSql(sql);
-  }, [sql]);
+    if (open) {
+      setEditedSql(sql);
+      setError(null);
+    }
+  }, [open, sql]);
 
   const handleApprove = async () => {
     setIsSubmitting(true);

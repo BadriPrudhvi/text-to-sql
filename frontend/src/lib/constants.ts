@@ -33,6 +33,7 @@ export const EVENT_META: Record<SSEEventType, EventMeta> = {
   plan_step_started: { label: "Running analysis step", icon: "play", visible: true },
   plan_step_executed: { label: "Step completed", icon: "check", visible: true },
   plan_step_failed: { label: "Step failed", icon: "alert", visible: true },
+  plan_step_correcting: { label: "Correcting step", icon: "zap", visible: true },
   analysis_complete: { label: "Analysis complete", icon: "sparkles", visible: true },
   analysis_validation_warning: { label: "Quality check warning", icon: "alert", visible: true },
 };

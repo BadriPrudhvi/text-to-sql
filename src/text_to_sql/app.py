@@ -104,6 +104,7 @@ def create_app() -> FastAPI:
             query_store=query_store,
             session_store=session_store,
             query_cache=query_cache,
+            schema_hash=db_backend.backend_type,
             database_type=db_backend.backend_type,
         )
 
